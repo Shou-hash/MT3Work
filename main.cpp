@@ -2,11 +2,16 @@
 
 const char kWindowTitle[] = "LC1C_12_ショウ_ズーウェン";
 
-struct Vector2
+struct Vector3
 {
 	float x;
 	float y;
 	float z;
+};
+
+struct Matrix4x4
+{
+	float m[4][4];
 };
 
 // Windowsアプリでのエントリーポイント(main関数)
