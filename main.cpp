@@ -14,6 +14,7 @@ struct Matrix4x4
 	float m[4][4];
 };
 
+// 行列の加算
 Matrix4x4 Add(const Matrix4x4& m1, const Matrix4x4& m2)
 {
 	Matrix4x4 result{};
@@ -27,6 +28,7 @@ Matrix4x4 Add(const Matrix4x4& m1, const Matrix4x4& m2)
 	return result;
 }
 
+// 行列の減算
 Matrix4x4 Subtract(const Matrix4x4& m1, const Matrix4x4& m2)
 {
 	Matrix4x4 result{};
@@ -40,6 +42,7 @@ Matrix4x4 Subtract(const Matrix4x4& m1, const Matrix4x4& m2)
 	return result;
 }
 
+// 行列の乗算
 Matrix4x4 Multiply(const Matrix4x4& m1, const Matrix4x4& m2)
 {
 	Matrix4x4 result{};
@@ -53,33 +56,107 @@ Matrix4x4 Multiply(const Matrix4x4& m1, const Matrix4x4& m2)
 	return result;
 }
 
-
-Matrix4x4 Inverse(const Matrix4x4&)
-{
-	Matrix4x4 result{};
-	for (int i = 0; i < 4; ++i)
-	{
-		result.m[i][i] = 1.0f;
-	}
-	return result;
-}
-
-Matrix4x4 Transpose(const Matrix4x4&)
-{
-	Matrix4x4 result{};
-	for (int i = 0; i < 4; ++i)
-	{
-		result.m[i][i] = 1.0f;
-	}
-	return result;
-}
-
+// 単位行列の作成 (Inverseより先に定義する必要があります)
 Matrix4x4 MakeIdentity4x4()
 {
 	Matrix4x4 result{};
 	for (int i = 0; i < 4; ++i)
 	{
 		result.m[i][i] = 1.0f;
+	}
+	return result;
+}
+
+// 逆行列の計算 (掃き出し法 / ガウス・ジョルダン法)
+Matrix4x4 Inverse(const Matrix4x4& m)
+{
+	// 4x8 の作業用行列を拡張（左側に元の行列、右側に単位行列を配置）
+	float mat[4][8];
+	for (int i = 0; i < 4; ++i)
+	{
+		for (int j = 0; j < 4; ++j)
+		{
+			mat[i][j] = m.m[i][j];
+			mat[i][j + 4] = (i == j) ? 1.0f : 0.0f;
+		}
+	}
+
+	for (int i = 0; i < 4; ++i)
+	{
+		// 部分ピボット選択（絶対値が最大の行を探す）
+		int maxRow = i;
+		float maxVal = mat[i][i] >= 0 ? mat[i][i] : -mat[i][i];
+		for (int k = i + 1; k < 4; ++k)
+		{
+			float val = mat[k][i] >= 0 ? mat[k][i] : -mat[k][i];
+			if (val > maxVal)
+			{
+				maxVal = val;
+				maxRow = k;
+			}
+		}
+
+		// 必要に応じて行を入れ替える
+		if (maxRow != i)
+		{
+			for (int j = 0; j < 8; ++j)
+			{
+				float temp = mat[i][j];
+				mat[i][j] = mat[maxRow][j];
+				mat[maxRow][j] = temp;
+			}
+		}
+
+		float pivot = mat[i][i];
+		// ピボットが0の場合は逆行列が存在しないため、単位行列を返して安全に抜ける
+		if (pivot == 0.0f)
+		{
+			return MakeIdentity4x4();
+		}
+
+		// ピボット行をピボットの値で割る（注目要素を1にする）
+		for (int j = 0; j < 8; ++j)
+		{
+			mat[i][j] /= pivot;
+		}
+
+		// 他の行の該当列を0にする
+		for (int k = 0; k < 4; ++k)
+		{
+			if (k != i)
+			{
+				float factor = mat[k][i];
+				for (int j = 0; j < 8; ++j)
+				{
+					mat[k][j] -= factor * mat[i][j];
+				}
+			}
+		}
+	}
+
+	// 右側の4x4部分（逆行列）を結果にコピーして返す
+	Matrix4x4 result{};
+	for (int i = 0; i < 4; ++i)
+	{
+		for (int j = 0; j < 4; ++j)
+		{
+			result.m[i][j] = mat[i][j + 4];
+		}
+	}
+	return result;
+}
+
+// 転置行列の計算 (行と列の入れ替え)
+Matrix4x4 Transpose(const Matrix4x4& m)
+{
+	Matrix4x4 result{};
+	for (int i = 0; i < 4; ++i)
+	{
+		for (int j = 0; j < 4; ++j)
+		{
+			// 元の行列の[j][i]を、結果の[i][j]に代入
+			result.m[i][j] = m.m[j][i];
+		}
 	}
 	return result;
 }
