@@ -3,6 +3,9 @@
   "WorkspaceRootPath": "C:\\MT3\\Novice\\",
   "Documents": [
     {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\ShouWork\\main.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
       "AbsoluteMoniker": "D:0:0:{0BC4A122-F06A-4486-BA08-4C9ACCA4AAB0}|Novice.vcxproj|C:\\MT3\\Novice\\main.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
       "RelativeMoniker": "D:0:0:{0BC4A122-F06A-4486-BA08-4C9ACCA4AAB0}|Novice.vcxproj|solutionrelative:main.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
     }
@@ -24,11 +27,24 @@
               "$type": "Document",
               "DocumentIndex": 0,
               "Title": "main.cpp",
+              "DocumentMoniker": "C:\\ShouWork\\main.cpp",
+              "RelativeDocumentMoniker": "..\\..\\ShouWork\\main.cpp",
+              "ToolTip": "C:\\ShouWork\\main.cpp",
+              "RelativeToolTip": "..\\..\\ShouWork\\main.cpp",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
+              "WhenOpened": "2026-05-11T17:14:59.284Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "main.cpp",
               "DocumentMoniker": "C:\\MT3\\Novice\\main.cpp",
               "RelativeDocumentMoniker": "main.cpp",
               "ToolTip": "C:\\MT3\\Novice\\main.cpp",
               "RelativeToolTip": "main.cpp",
-              "ViewState": "AgIAABgAAAAAAAAAAAAAACgAAAAfAAAAAAAAAA==",
+              "ViewState": "AgIAACYAAAAAAAAAAAAswEAAAAAeAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
               "WhenOpened": "2026-04-17T07:23:14.342Z",
               "EditorCaption": ""

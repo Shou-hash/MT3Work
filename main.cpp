@@ -1,4 +1,5 @@
 #include <Novice.h>
+#include <cmath>
 
 const char kWindowTitle[] = "LC1C_12_ショウ_ズーウェン";
 
@@ -13,6 +14,41 @@ struct Matrix4x4
 {
 	float m[4][4];
 };
+// 透視投影行列の作成
+Matrix4x4 MakePerspectiveFovMatrix(float fovY, float aspect, float nearClip, float farClip) {
+	Matrix4x4 result = {};
+	float f = 1.0f / tanf(fovY / 2.0f);
+	result.m[0][0] = f / aspect;
+	result.m[1][1] = f;
+	result.m[2][2] = (farClip + nearClip) / (nearClip - farClip);
+	result.m[2][3] = (2.0f * farClip * nearClip) / (nearClip - farClip);
+	result.m[3][2] = -1.0f;
+	return result;
+}
+// 正射影行列の作成
+Matrix4x4 MakeOrthographicMatrix(float left, float right, float top, float bottom, float nearClip, float farClip) {
+	Matrix4x4 result = {};
+	result.m[0][0] = 2.0f / (right - left);
+	result.m[1][1] = 2.0f / (top - bottom);
+	result.m[2][2] = -2.0f / (farClip - nearClip);
+	result.m[3][0] = -(right + left) / (right - left);
+	result.m[3][1] = -(top + bottom) / (top - bottom);
+	result.m[3][2] = -(farClip + nearClip) / (farClip - nearClip);
+	result.m[3][3] = 1.0f;
+	return result;
+}
+// ビューポート変換行列の作成
+Matrix4x4 MakeViewportMatrix(float left, float top, float width, float height, float minDepth, float maxDepth) {
+	Matrix4x4 result = {};
+	result.m[0][0] = width / 2.0f;
+	result.m[1][1] = -height / 2.0f; // Y軸を反転
+	result.m[2][2] = maxDepth - minDepth;
+	result.m[3][0] = left + width / 2.0f;
+	result.m[3][1] = top + height / 2.0f;
+	result.m[3][2] = minDepth;
+	result.m[3][3] = 1.0f;
+	return result;
+}
 
 Matrix4x4 Multiply(const Matrix4x4& a, const Matrix4x4& b) {
 	Matrix4x4 r = {};
@@ -26,35 +62,6 @@ Matrix4x4 Multiply(const Matrix4x4& a, const Matrix4x4& b) {
 		}
 	}
 	return r;
-}
-
-Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Vector3& rotate, const Vector3& translation) {
-	Matrix4x4 result;
-	// スケーリング行列の作成
-	Matrix4x4 scaleMatrix = { {
-		{scale.x, 0.0f, 0.0f, 0.0f},
-		{0.0f, scale.y, 0.0f, 0.0f},
-		{0.0f, 0.0f, scale.z, 0.0f},
-		{0.0f, 0.0f, 0.0f, 1.0f}
-		} };
-	// 回転行列の作成
-	Matrix4x4 rotationMatrix = { {
-		{1.0f, 0.0f, 0.0f, 0.0f},
-		{0.0f, 1.0f, 0.0f, 0.0f},
-		{0.0f, 0.0f, 1.0f, 0.0f},
-		{0.0f, 0.0f, 0.0f, 1.0f}
-		} };
-	(void)rotate;
-	// 平行移動行列の作成
-	Matrix4x4 translationMatrix = { {
-		{1.0f, 0.0f, 0.0f, translation.x},
-		{0.0f, 1.0f, 0.0f, translation.y},
-		{0.0f, 0.0f, 1.0f, translation.z},
-		{0.0f, 0.0f, 0.0f, 1.0f}
-		} };
-	// アフィン変換行列の計算
-	result = Multiply(translationMatrix, Multiply(rotationMatrix, scaleMatrix));
-	return result;
 }
 
 static const int kRowHeight = 20;
@@ -78,10 +85,11 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	char keys[256] = { 0 };
 	char preKeys[256] = { 0 };
 
-	Vector3 scale = { 1.0f, 2.0f, -3.0f };
-	Vector3 rotate = { 0.3f, 1.43f, -0.8f };
-	Vector3 translate = { 10.0f, -20.0f, 30.0f };
-	Matrix4x4 worldMatrix = MakeAffineMatrix(scale, rotate, translate);
+	Matrix4x4 orthographicMatrix = MakeOrthographicMatrix(-10.0f, 210.0f, 130.0f, 420.0f, 400.0f, 1000.0f);
+
+	Matrix4x4 perspectiveMatrix = MakePerspectiveFovMatrix(3.14f / 4.0f, 1280.0f / 720.0f, 400.0f, 1000.0f);
+
+	Matrix4x4 viewportMatrix = MakeViewportMatrix(120.0f, 230.0f, 1280.0f, 720.0f, 0.0f, 1.0f);
 
 	// ウィンドウの×ボタンが押されるまでループ
 	while (Novice::ProcessMessage() == 0) {
@@ -104,7 +112,9 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		/// ↓描画処理ここから
 		///
 
-		MatrixScreenPrintf(0, 0, worldMatrix, "World Matrix");
+		MatrixScreenPrintf(0, 0, orthographicMatrix, "Orthographic Matrix");
+		MatrixScreenPrintf(0, kRowHeight * 5, perspectiveMatrix, "Perspective Matrix");
+		MatrixScreenPrintf(0, kRowHeight * 10, viewportMatrix, "Viewport Matrix");
 
 		///
 		/// ↑描画処理ここまで
