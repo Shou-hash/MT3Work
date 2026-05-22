@@ -33,10 +33,10 @@ Matrix4x4 MakeRotateXMatrix(float radian)
 {
 	Matrix4x4 rotateX = {};
 	rotateX.m[0][0] = 1.0f;
-	rotateX.m[1][1] = cosf(radian);
-	rotateX.m[1][2] = -sinf(radian);
-	rotateX.m[2][1] = sinf(radian);
-	rotateX.m[2][2] = cosf(radian);
+	rotateX.m[1][1] = std::cos(radian);
+	rotateX.m[1][2] = -std::sin(radian);
+	rotateX.m[2][1] = std::sin(radian);
+	rotateX.m[2][2] = std::cos(radian);
 	rotateX.m[3][3] = 1.0f;
 	return rotateX;
 }
@@ -44,11 +44,11 @@ Matrix4x4 MakeRotateXMatrix(float radian)
 Matrix4x4 MakeRotateYMatrix(float radian)
 {
 	Matrix4x4 rotateY = {};
-	rotateY.m[0][0] = cosf(radian);
-	rotateY.m[0][2] = sinf(radian);
+	rotateY.m[0][0] = std::cos(radian);
+	rotateY.m[0][2] = std::sin(radian);
 	rotateY.m[1][1] = 1.0f;
-	rotateY.m[2][0] = -sinf(radian);
-	rotateY.m[2][2] = cosf(radian);
+	rotateY.m[2][0] = -std::sin(radian);
+	rotateY.m[2][2] = std::cos(radian);
 	rotateY.m[3][3] = 1.0f;
 	return rotateY;
 }
@@ -56,10 +56,10 @@ Matrix4x4 MakeRotateYMatrix(float radian)
 Matrix4x4 MakeRotateZMatrix(float radian)
 {
 	Matrix4x4 rotateZ = {};
-	rotateZ.m[0][0] = cosf(radian);
-	rotateZ.m[0][1] = -sinf(radian);
-	rotateZ.m[1][0] = sinf(radian);
-	rotateZ.m[1][1] = cosf(radian);
+	rotateZ.m[0][0] = std::cos(radian);
+	rotateZ.m[0][1] = -std::sin(radian);
+	rotateZ.m[1][0] = std::sin(radian);
+	rotateZ.m[1][1] = std::cos(radian);
 	rotateZ.m[2][2] = 1.0f;
 	rotateZ.m[3][3] = 1.0f;
 	return rotateZ;
@@ -83,8 +83,8 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	Novice::Initialize(kWindowTitle, 1280, 720);
 
 	// キー入力結果を受け取る箱
-	char keys[256] = {0};
-	char preKeys[256] = {0};
+	char keys[256] = { 0 };
+	char preKeys[256] = { 0 };
 
 	Vector3 rotate = { 4.0f, 1.0f, 2.0f };
 	Matrix4x4 rotateXMatrix = MakeRotateXMatrix(rotate.x);
