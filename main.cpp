@@ -1,4 +1,5 @@
 #include <Novice.h>
+#include <cmath>
 
 const char kWindowTitle[] = "LC1C_12_ショウ_ズーウェン";
 
@@ -29,7 +30,6 @@ Matrix4x4 Multiply(const Matrix4x4& a, const Matrix4x4& b) {
 }
 
 Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Vector3& rotate, const Vector3& translation) {
-	Matrix4x4 result;
 	// スケーリング行列の作成
 	Matrix4x4 scaleMatrix = { {
 		{scale.x, 0.0f, 0.0f, 0.0f},
@@ -37,14 +37,34 @@ Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Vector3& rotate, const Ve
 		{0.0f, 0.0f, scale.z, 0.0f},
 		{0.0f, 0.0f, 0.0f, 1.0f}
 		} };
-	// 回転行列の作成
-	Matrix4x4 rotationMatrix = { {
+
+	// X軸回転行列の作成
+	Matrix4x4 rotateXMatrix = { {
 		{1.0f, 0.0f, 0.0f, 0.0f},
+		{0.0f, std::cos(rotate.x), -std::sin(rotate.x), 0.0f},
+		{0.0f, std::sin(rotate.x), std::cos(rotate.x), 0.0f},
+		{0.0f, 0.0f, 0.0f, 1.0f}
+		} };
+
+	// Y軸回転行列の作成
+	Matrix4x4 rotateYMatrix = { {
+		{std::cos(rotate.y), 0.0f, std::sin(rotate.y), 0.0f},
 		{0.0f, 1.0f, 0.0f, 0.0f},
+		{-std::sin(rotate.y), 0.0f, std::cos(rotate.y), 0.0f},
+		{0.0f, 0.0f, 0.0f, 1.0f}
+		} };
+
+	// Z軸回転行列の作成
+	Matrix4x4 rotateZMatrix = { {
+		{std::cos(rotate.z), -std::sin(rotate.z), 0.0f, 0.0f},
+		{std::sin(rotate.z), std::cos(rotate.z), 0.0f, 0.0f},
 		{0.0f, 0.0f, 1.0f, 0.0f},
 		{0.0f, 0.0f, 0.0f, 1.0f}
 		} };
-	(void)rotate;
+
+	// 回転行列の合成 (XYZの順で結合: Rx * Ry * Rz)
+	Matrix4x4 rotationMatrix = Multiply(rotateXMatrix, Multiply(rotateYMatrix, rotateZMatrix));
+
 	// 平行移動行列の作成
 	Matrix4x4 translationMatrix = { {
 		{1.0f, 0.0f, 0.0f, translation.x},
@@ -52,8 +72,9 @@ Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Vector3& rotate, const Ve
 		{0.0f, 0.0f, 1.0f, translation.z},
 		{0.0f, 0.0f, 0.0f, 1.0f}
 		} };
-	// アフィン変換行列の計算
-	result = Multiply(translationMatrix, Multiply(rotationMatrix, scaleMatrix));
+
+	// アフィン変換行列の計算 (結合順序: Translate * Rotate * Scale)
+	Matrix4x4 result = Multiply(translationMatrix, Multiply(rotationMatrix, scaleMatrix));
 	return result;
 }
 
