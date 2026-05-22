@@ -298,6 +298,24 @@ Matrix4x4 MakeViewportMatrix(float left, float top, float width, float height, f
 	return result;
 }
 
+bool IsCollision(const Sphere& s1, const Sphere& s2)
+{
+	// 2つの球の中心点間の差分ベクトルを計算
+	Vector3 diff = Subtract(s1.center, s2.center);
+
+	// 中心点間の距離の2乗を計算
+	float distanceSquared = diff.x * diff.x + diff.y * diff.y + diff.z * diff.z;
+
+	// 2つの球の半径の合計
+	float radiusSum = s1.radius + s2.radius;
+
+	// 半径の合計の2乗
+	float radiusSumSquared = radiusSum * radiusSum;
+
+	// 距離の2乗が半径の合計の2乗以下なら衝突している (true)
+	return distanceSquared <= radiusSumSquared;
+}
+
 void DrawGrid(const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix) {
 	const float kGridHalfWidth = 2.0f;
 	const uint32_t kSubdivisions = 10;
@@ -423,9 +441,12 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	char preKeys[256] = { 0 };
 
 	// 変数の初期化（ループの外に出すことで毎フレーム初期化されるのを防ぐ）
-	Vector3 cameraTranslate = { 0.0f, 1.9f, -6.49f };
+	Vector3 cameraTranslate = { 0.0f, 2.5f, -10.0f };
 	Vector3 cameraRotate = { 0.26f, 0.0f, 0.0f };
-	Sphere sphere = { {0.0f, 0.0f, 0.0f}, 1.0f };
+	Sphere sphere1 = { {0.0f, 0.0f, 0.0f}, 1.0f };
+
+	// 初期位置を近づけて、最初から当たり判定の確認をしやすくしています
+	Sphere sphere2 = { {1.2f, 0.0f, 0.0f}, 0.5f };
 
 	Segment segment{ {-2.0f,-1.0f,0.0f},{3.0f,2.0f,2.0f} };
 	Vector3 point{ -1.5f,0.6f,0.6f };
@@ -449,8 +470,13 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 		ImGui::Begin("Window");
 
-		ImGui::InputFloat3("Project", &project.x, "%.3f", ImGuiInputTextFlags_ReadOnly);
-		ImGui::InputFloat3("ClosestPoint", &closestPoint.x, "%.3f", ImGuiInputTextFlags_ReadOnly);
+		ImGui::DragFloat3("CameraTranslate", &cameraTranslate.x, 0.01f);
+		ImGui::DragFloat3("CameraRotate", &cameraRotate.x, 0.01f);
+		ImGui::DragFloat3("SphereCenter1", &sphere1.center.x, 0.01f);
+		ImGui::DragFloat("SphereRadius1", &sphere1.radius, 0.01f);
+
+		ImGui::DragFloat3("SphereCenter2", &sphere2.center.x, 0.01f);
+		ImGui::DragFloat("SphereRadius2", &sphere2.radius, 0.01f);
 
 		ImGui::End();
 
@@ -477,10 +503,6 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		Sphere pointSphere{ point,0.01f };
 		Sphere closestPointSphere{ closestPoint,0.01f };
 
-		// 分かりやすいように色を変更（任意で元に戻してください）
-		DrawSphere(pointSphere, viewProjectionMatrix, viewportMatrix, RED);
-		DrawSphere(closestPointSphere, viewProjectionMatrix, viewportMatrix, BLUE);
-
 		// 3D空間上の頂点をスクリーン座標に変換
 		Vector3 startNdc = Transform(segment.origin, viewProjectionMatrix);
 		Vector3 startScreen = Transform(startNdc, viewportMatrix);
@@ -489,8 +511,18 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		Vector3 endNdc = Transform(endPos, viewProjectionMatrix);
 		Vector3 endScreen = Transform(endNdc, viewportMatrix);
 
-		// 線分の描画
-		Novice::DrawLine(int(startScreen.x), int(startScreen.y), int(endScreen.x), int(endScreen.y), WHITE);
+		// 当たっていたらボール1を赤色、それ以外は白色（WHITE）にする
+		uint32_t sphere1Color = 0xFFFFFFFF; // 初期値は白色
+		if (IsCollision(sphere1, sphere2))
+		{
+			sphere1Color = 0xFF0000FF; // 赤色のABGR（またはRGBAカラーコード。環境によりREDでも可）
+		}
+
+		// ボール1を描画（判定結果の色を適用）
+		DrawSphere(sphere1, viewProjectionMatrix, viewportMatrix, sphere1Color);
+
+		// 【適用】ボール2を描画（白色固定）
+		DrawSphere(sphere2, viewProjectionMatrix, viewportMatrix, 0xFFFFFFFF);
 
 		///
 		/// ↑描画処理ここまで
