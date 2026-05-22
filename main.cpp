@@ -25,7 +25,91 @@ struct Sphere
 	float radius;
 };
 
-Matrix4x4 Inverse(const Matrix4x4 & m)
+struct Line
+{
+	Vector3 origin;
+	Vector3 diff;
+};
+
+struct Ray
+{
+	Vector3 origin;
+	Vector3 diff;
+};
+
+struct Segment
+{
+	Vector3 origin;
+	Vector3 diff;
+};
+
+// ベクトルの足し算
+Vector3 Add(const Vector3& v1, const Vector3& v2)
+{
+	return Vector3{ v1.x + v2.x, v1.y + v2.y, v1.z + v2.z };
+}
+
+// ベクトルの引き算
+Vector3 Subtract(const Vector3& v1, const Vector3& v2)
+{
+	return Vector3{ v1.x - v2.x, v1.y - v2.y, v1.z - v2.z };
+}
+
+Vector3 Project(const Vector3& v1, const Vector3& v2)
+{
+	// v2の長さの二乗（ドット積）
+	float sqrMagV2 = v2.x * v2.x + v2.y * v2.y + v2.z * v2.z;
+
+	// ゼロ除算の防止（v2がゼロベクトルの場合はゼロベクトルを返す）
+	if (sqrMagV2 < 1e-6f)
+	{
+		return Vector3{ 0.0f, 0.0f, 0.0f };
+	}
+
+	// v1 と v2 の内積
+	float dot = v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
+
+	// 射影倍率を計算して v2 に掛ける
+	float t = dot / sqrMagV2;
+	return Vector3{ v2.x * t, v2.y * t, v2.z * t };
+}
+
+// クランプ用のヘルパー関数（標準関数の代わり、または std::clamp でも可）
+float Clamp(float value, float min, float max) {
+	if (value < min) return min;
+	if (value > max) return max;
+	return value;
+}
+
+Vector3 ClosestPoint(const Vector3& point, const Segment& segment)
+{
+	// segment.diff は「始点から終点へのベクトル(AB)」そのもの
+	Vector3 ab = segment.diff;
+
+	// 始点から対象の点へのベクトル(AP)
+	Vector3 ap = Subtract(point, segment.origin);
+
+	// ABの長さの二乗
+	float sqrMagAB = ab.x * ab.x + ab.y * ab.y + ab.z * ab.z;
+
+	// 始点と終点が同じ（点）ベクトルの場合は、始点を返す
+	if (sqrMagAB < 1e-6f)
+	{
+		return segment.origin;
+	}
+
+	// 内積 (AP ・ AB)
+	float dot = ap.x * ab.x + ap.y * ab.y + ap.z * ab.z;
+
+	// 投影比率 t を計算し、0.0 〜 1.0 の間にクランプ
+	float t = dot / sqrMagAB;
+	t = Clamp(t, 0.0f, 1.0f);
+
+	// 最近傍点を計算 (A + t * AB)
+	return Add(segment.origin, Vector3{ ab.x * t, ab.y * t, ab.z * t });
+}
+
+Matrix4x4 Inverse(const Matrix4x4& m)
 {
 	Matrix4x4 result = {};
 	float a[4][8] = { 0 };
@@ -69,7 +153,7 @@ Matrix4x4 Inverse(const Matrix4x4 & m)
 	return result;
 }
 
-Vector3 Transform(const Vector3 & vector, const Matrix4x4 & matrix)
+Vector3 Transform(const Vector3& vector, const Matrix4x4& matrix)
 {
 	Vector3 result;
 
@@ -89,7 +173,7 @@ Vector3 Transform(const Vector3 & vector, const Matrix4x4 & matrix)
 	return result;
 }
 
-Matrix4x4 Multiply(const Matrix4x4 & a, const Matrix4x4 & b) {
+Matrix4x4 Multiply(const Matrix4x4& a, const Matrix4x4& b) {
 	Matrix4x4 r = {};
 	for (int i = 0; i < 4; ++i) {
 		for (int j = 0; j < 4; ++j) {
@@ -147,7 +231,7 @@ Matrix4x4 rotationZ(float angle) {
 	return result;
 }
 
-Matrix4x4 MakeTranslationMatrix(const Vector3 & translation) {
+Matrix4x4 MakeTranslationMatrix(const Vector3& translation) {
 	Matrix4x4 result = identity();
 	result.m[3][0] = translation.x;
 	result.m[3][1] = translation.y;
@@ -155,7 +239,7 @@ Matrix4x4 MakeTranslationMatrix(const Vector3 & translation) {
 	return result;
 }
 
-Matrix4x4 MakeAffineMatrix(const Vector3 & scale, const Vector3 & rotate, const Vector3 & translation) {
+Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Vector3& rotate, const Vector3& translation) {
 	Matrix4x4 result;
 	// スケーリング行列の作成
 	Matrix4x4 scaleMatrix = { {
@@ -214,7 +298,7 @@ Matrix4x4 MakeViewportMatrix(float left, float top, float width, float height, f
 	return result;
 }
 
-void DrawGrid(const Matrix4x4 & viewProjectionMatrix, const Matrix4x4 & viewportMatrix) {
+void DrawGrid(const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix) {
 	const float kGridHalfWidth = 2.0f;
 	const uint32_t kSubdivisions = 10;
 	const float kGridEvery = (kGridHalfWidth * 2.0f) / float(kSubdivisions);
@@ -262,7 +346,7 @@ void DrawGrid(const Matrix4x4 & viewProjectionMatrix, const Matrix4x4 & viewport
 
 constexpr float kPi = std::numbers::pi_v<float>;
 
-void DrawSphere(const Sphere & sphere, const Matrix4x4 & viewProjectionMatrix, const Matrix4x4 & viewportMatrix, uint32_t color) {
+void DrawSphere(const Sphere& sphere, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
 	const uint32_t kSubdivisions = 20;
 	const float kLonEvery = 2.0f * kPi / (kSubdivisions);
 	const float kLatEvery = kPi / (kSubdivisions);
@@ -317,7 +401,7 @@ void DrawSphere(const Sphere & sphere, const Matrix4x4 & viewProjectionMatrix, c
 
 static const int kRowHeight = 20;
 
-void MatrixScreenPrintf(int x, int y, const Matrix4x4 & matrix, const char* label)
+void MatrixScreenPrintf(int x, int y, const Matrix4x4& matrix, const char* label)
 {
 	Novice::ScreenPrintf(x, y, "%s:", label);
 	for (int i = 0; i < 4; ++i) {
@@ -343,6 +427,13 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	Vector3 cameraRotate = { 0.26f, 0.0f, 0.0f };
 	Sphere sphere = { {0.0f, 0.0f, 0.0f}, 1.0f };
 
+	Segment segment{ {-2.0f,-1.0f,0.0f},{3.0f,2.0f,2.0f} };
+	Vector3 point{ -1.5f,0.6f,0.6f };
+
+	Vector3 project = Project(Subtract(point, segment.origin), segment.diff);
+
+	Vector3 closestPoint = ClosestPoint(point, segment);
+
 	// ウィンドウの×ボタンが押されるまでループ
 	while (Novice::ProcessMessage() == 0) {
 		// フレームの開始
@@ -358,10 +449,8 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 		ImGui::Begin("Window");
 
-		ImGui::DragFloat3("CameraTranslate", &cameraTranslate.x, 0.01f);
-		ImGui::DragFloat3("CameraRotate", &cameraRotate.x, 0.01f);
-		ImGui::DragFloat3("SphereCenter", &sphere.center.x, 0.01f);
-		ImGui::DragFloat("SphereRadius", &sphere.radius, 0.01f);
+		ImGui::InputFloat3("Project", &project.x, "%.3f", ImGuiInputTextFlags_ReadOnly);
+		ImGui::InputFloat3("ClosestPoint", &closestPoint.x, "%.3f", ImGuiInputTextFlags_ReadOnly);
 
 		ImGui::End();
 
@@ -385,7 +474,23 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 		DrawGrid(viewProjectionMatrix, viewportMatrix);
 
-		DrawSphere(sphere, viewProjectionMatrix, viewportMatrix, 0xFFFFFFFF);
+		Sphere pointSphere{ point,0.01f };
+		Sphere closestPointSphere{ closestPoint,0.01f };
+
+		// 分かりやすいように色を変更（任意で元に戻してください）
+		DrawSphere(pointSphere, viewProjectionMatrix, viewportMatrix, RED);
+		DrawSphere(closestPointSphere, viewProjectionMatrix, viewportMatrix, BLUE);
+
+		// 3D空間上の頂点をスクリーン座標に変換
+		Vector3 startNdc = Transform(segment.origin, viewProjectionMatrix);
+		Vector3 startScreen = Transform(startNdc, viewportMatrix);
+
+		Vector3 endPos = Add(segment.origin, segment.diff);
+		Vector3 endNdc = Transform(endPos, viewProjectionMatrix);
+		Vector3 endScreen = Transform(endNdc, viewportMatrix);
+
+		// 線分の描画
+		Novice::DrawLine(int(startScreen.x), int(startScreen.y), int(endScreen.x), int(endScreen.y), WHITE);
 
 		///
 		/// ↑描画処理ここまで
