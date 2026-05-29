@@ -17,7 +17,7 @@ struct Matrix4x4
 	float m[4][4];
 };
 
-// クロス積（外積）を計算する関数（追加）
+// クロス積（外積）を計算する関数
 Vector3 Cross(const Vector3& v1, const Vector3& v2)
 {
 	return Vector3{
@@ -43,7 +43,7 @@ Matrix4x4 Inverse(const Matrix4x4& m)
 	// ガウス・ジョルダンの消去法（掃き出し法）
 	for (int i = 0; i < 4; ++i) {
 		float pivot = a[i][i];
-		if (pivot == 0.0f) continue; // ゼロ除算回避（本来は行の入れ替えが必要ですが簡易化）
+		if (pivot == 0.0f) continue;
 
 		// ピボット行をピボットで割る
 		for (int j = 0; j < 8; ++j) {
@@ -75,11 +75,10 @@ Vector3 Transform(const Vector3& vector, const Matrix4x4& matrix)
 {
 	Vector3 result;
 
-	// 平行移動（m[3][*]）を足し合わせ、最後にwで割る
 	result.x = (vector.x * matrix.m[0][0] + vector.y * matrix.m[1][0] + vector.z * matrix.m[2][0] + 1.0f * matrix.m[3][0]);
 	result.y = (vector.x * matrix.m[0][1] + vector.y * matrix.m[1][1] + vector.z * matrix.m[2][1] + 1.0f * matrix.m[3][1]);
 	result.z = (vector.x * matrix.m[0][2] + vector.y * matrix.m[1][2] + vector.z * matrix.m[2][2] + 1.0f * matrix.m[3][2]);
-	// w成分の計算（透視投影の除算に必要）
+
 	float w = vector.x * matrix.m[0][3] + vector.y * matrix.m[1][3] + vector.z * matrix.m[2][3] + 1.0f * matrix.m[3][3];
 
 	if (w != 0.0f)
@@ -118,12 +117,10 @@ Matrix4x4 identity() {
 
 Matrix4x4 rotationX(float angle) {
 	Matrix4x4 result = identity();
-	result.m[0][0] = 1.0f;
 	result.m[1][1] = cosf(angle);
 	result.m[1][2] = sinf(angle);
 	result.m[2][1] = -sinf(angle);
 	result.m[2][2] = cosf(angle);
-	result.m[3][3] = 1.0f;
 	return result;
 }
 
@@ -131,10 +128,8 @@ Matrix4x4 rotationY(float angle) {
 	Matrix4x4 result = identity();
 	result.m[0][0] = cosf(angle);
 	result.m[0][2] = -sinf(angle);
-	result.m[1][1] = 1.0f;
 	result.m[2][0] = sinf(angle);
 	result.m[2][2] = cosf(angle);
-	result.m[3][3] = 1.0f;
 	return result;
 }
 
@@ -144,8 +139,6 @@ Matrix4x4 rotationZ(float angle) {
 	result.m[0][1] = sinf(angle);
 	result.m[1][0] = -sinf(angle);
 	result.m[1][1] = cosf(angle);
-	result.m[2][2] = 1.0f;
-	result.m[3][3] = 1.0f;
 	return result;
 }
 
@@ -158,27 +151,21 @@ Matrix4x4 MakeTranslationMatrix(const Vector3& translation) {
 }
 
 Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Vector3& rotate, const Vector3& translation) {
-	Matrix4x4 result;
-	// スケーリング行列の作成
 	Matrix4x4 scaleMatrix = { {
 		{scale.x, 0.0f, 0.0f, 0.0f},
 		{0.0f, scale.y, 0.0f, 0.0f},
 		{0.0f, 0.0f, scale.z, 0.0f},
 		{0.0f, 0.0f, 0.0f, 1.0f}
 		} };
-	// 回転行列の作成
 	Matrix4x4 rotationXMatrix = rotationX(rotate.x);
 	Matrix4x4 rotationYMatrix = rotationY(rotate.y);
 	Matrix4x4 rotationZMatrix = rotationZ(rotate.z);
 	Matrix4x4 rotationMatrix = Multiply(rotationXMatrix, Multiply(rotationYMatrix, rotationZMatrix));
-	// 平行移動行列の作成
 	Matrix4x4 translationMatrix = MakeTranslationMatrix(translation);
-	// アフィン変換行列の計算
-	result = Multiply(scaleMatrix, Multiply(rotationMatrix, translationMatrix));
-	return result;
+
+	return Multiply(scaleMatrix, Multiply(rotationMatrix, translationMatrix));
 }
 
-// 透視投影行列の作成
 Matrix4x4 MakePerspectiveFovMatrix(float fovY, float aspect, float nearClip, float farClip) {
 	Matrix4x4 result = {};
 	float f = 1.0f / tanf(fovY / 2.0f);
@@ -190,20 +177,6 @@ Matrix4x4 MakePerspectiveFovMatrix(float fovY, float aspect, float nearClip, flo
 	return result;
 }
 
-// 正射影行列の作成
-Matrix4x4 MakeOrthographicMatrix(float left, float right, float top, float bottom, float nearClip, float farClip) {
-	Matrix4x4 result = {};
-	result.m[0][0] = 2.0f / (right - left);
-	result.m[1][1] = 2.0f / (top - bottom);
-	result.m[2][2] = 1.0f / (farClip - nearClip);
-	result.m[3][0] = -(right + left) / (right - left);
-	result.m[3][1] = -(top + bottom) / (top - bottom);
-	result.m[3][2] = -nearClip / (farClip - nearClip);
-	result.m[3][3] = 1.0f;
-	return result;
-}
-
-// ビューポート変換行列の作成
 Matrix4x4 MakeViewportMatrix(float left, float top, float width, float height, float minDepth, float maxDepth) {
 	Matrix4x4 result = {};
 	result.m[0][0] = width / 2.0f;
@@ -216,18 +189,7 @@ Matrix4x4 MakeViewportMatrix(float left, float top, float width, float height, f
 	return result;
 }
 
-static const int kRowHeight = 20;
-
-void MatrixScreenPrintf(int x, int y, const Matrix4x4& matrix, const char* label)
-{
-	Novice::ScreenPrintf(x, y, "%s:", label);
-	for (int i = 0; i < 4; ++i) {
-		Novice::ScreenPrintf(x, y + (i + 1) * kRowHeight, "%.2f, %.2f, %.2f, %.2f",
-			matrix.m[i][0], matrix.m[i][1], matrix.m[i][2], matrix.m[i][3]);
-	}
-}
-
-// ベクトルの値を画面上に表示する関数（追加）
+// ベクトルの値を画面上に表示する関数
 void VectorScreenPrintf(int x, int y, const Vector3& vector, const char* label)
 {
 	Novice::ScreenPrintf(x, y, "%s: %.2f, %.2f, %.2f", label, vector.x, vector.y, vector.z);
@@ -246,14 +208,15 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	Vector3 cameraPosition = { 0.0f, 0.0f, -5.0f };
 
 	const Vector3 kLocalVertices[3] = {
-		{ 0.0f, 1.0f, 0.0f },
+		{  0.0f,  1.0f, 0.0f },
 		{  1.0f, -1.0f, 0.0f },
-		{  -1.0f,  -1.0f, 0.0f } };
+		{ -1.0f, -1.0f, 0.0f }
+	};
 
 	Vector3 rotate{};
 	Vector3 translate{};
 
-	// クロス積を確認するためのテスト用ベクトル
+	// クロス積検証用のテストベクトル
 	Vector3 v1 = { 1.0f, 2.0f, 3.0f };
 	Vector3 v2 = { 4.0f, 5.0f, 6.0f };
 
@@ -270,36 +233,31 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		/// ↓更新処理ここから
 		///
 
-		if (keys[DIK_W]) {
-			translate.z += 0.5f; // 前へ
-		}
-		if (keys[DIK_S]) {
-			translate.z -= 0.5f; // 後ろへ
-		}
+		// 移動処理
+		if (keys[DIK_W]) { translate.z += 0.5f; } // 前へ (速度を少し調整)
+		if (keys[DIK_S]) { translate.z -= 0.5f; } // 後ろへ
+		if (keys[DIK_D]) { translate.x += 0.5f; } // 右へ
+		if (keys[DIK_A]) { translate.x -= 0.5f; } // 左へ
 
-		if (keys[DIK_D]) {
-			translate.x += 0.05f; // 右へ
-		}
-		if (keys[DIK_A]) {
-			translate.x -= 0.05f; // 左へ
-		}
+		// 回転処理（重複していた加算を1回に集約）
+		rotate.y += 0.1f;
 
-		rotate.y += 0.05f;
-
+		// 各種行列計算
 		Matrix4x4 worldMatrix = MakeAffineMatrix({ 1.0f, 1.0f, 1.0f }, rotate, translate);
 		Matrix4x4 cameraMatrix = MakeAffineMatrix({ 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, cameraPosition);
 		Matrix4x4 viewMatrix = Inverse(cameraMatrix);
 		Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(0.45f, 1280.0f / 720.0f, 0.1f, 100.0f);
 		Matrix4x4 worldViewProjectionMatrix = Multiply(worldMatrix, Multiply(viewMatrix, projectionMatrix));
 		Matrix4x4 viewportMatrix = MakeViewportMatrix(0, 0, 1280.0f, 720.0f, 0.0f, 1.0f);
-		rotate.y += 0.01f;
+
+		// 頂点変換
 		Vector3 screenVertices[3];
 		for (uint32_t i = 0; i < 3; ++i) {
 			Vector3 ndcVertex = Transform(kLocalVertices[i], worldViewProjectionMatrix);
 			screenVertices[i] = Transform(ndcVertex, viewportMatrix);
 		}
 
-		// クロス積の毎フレーム計算
+		// クロス積の計算
 		Vector3 crossResult = Cross(v1, v2);
 
 		///
@@ -310,6 +268,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		/// ↓描画処理ここから
 		///
 
+		// 三角形の描画
 		Novice::DrawTriangle(
 			int(screenVertices[0].x), int(screenVertices[0].y),
 			int(screenVertices[1].x), int(screenVertices[1].y),
@@ -317,7 +276,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			RED, kFillModeSolid
 		);
 
-		// クロス積の結果を画面左上にテキスト描画（指摘事項の解決）
+		// クロス積のテスト結果を表示
 		VectorScreenPrintf(20, 20, v1, "v1");
 		VectorScreenPrintf(20, 40, v2, "v2");
 		VectorScreenPrintf(20, 60, crossResult, "Cross(v1, v2)");
