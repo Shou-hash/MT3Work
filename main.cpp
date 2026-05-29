@@ -43,6 +43,12 @@ struct Segment
 	Vector3 diff;
 };
 
+struct Plane
+{
+	Vector3 normal;
+	float distance;
+};
+
 // ベクトルの足し算
 Vector3 Add(const Vector3& v1, const Vector3& v2)
 {
@@ -298,22 +304,99 @@ Matrix4x4 MakeViewportMatrix(float left, float top, float width, float height, f
 	return result;
 }
 
-bool IsCollision(const Sphere& s1, const Sphere& s2)
+bool IsCollision(const Sphere& sphere, const Plane& plane)
 {
-	// 2つの球の中心点間の差分ベクトルを計算
-	Vector3 diff = Subtract(s1.center, s2.center);
+	// 平面の法線ベクトルと球の中心点の内積を計算
+	float dot = sphere.center.x * plane.normal.x + sphere.center.y * plane.normal.y + sphere.center.z * plane.normal.z;
 
-	// 中心点間の距離の2乗を計算
-	float distanceSquared = diff.x * diff.x + diff.y * diff.y + diff.z * diff.z;
+	// 平面から球の中心までの符号付き距離を計算
+	float distance = dot - plane.distance;
 
-	// 2つの球の半径の合計
-	float radiusSum = s1.radius + s2.radius;
+	// 距離の絶対値が球の半径以下なら衝突している
+	if (std::fabsf(distance) <= sphere.radius)
+	{
+		return true;
+	}
 
-	// 半径の合計の2乗
-	float radiusSumSquared = radiusSum * radiusSum;
+	return false;
+}
 
-	// 距離の2乗が半径の合計の2乗以下なら衝突している (true)
-	return distanceSquared <= radiusSumSquared;
+Vector3 Perpendicular(const Vector3& vector)
+{
+	if (vector.x != 0.0f || vector.y != 0.0f)
+	{
+		return { -vector.y , vector.x ,0.0f };
+	}
+	return { 0.0f,-vector.z,vector.y };
+}
+
+// ベクトルの実数倍（スライド内のMultiply用）
+Vector3 PlaneMultiply(float scalar, const Vector3& v)
+{
+	return Vector3{ scalar * v.x, scalar * v.y, scalar * v.z };
+}
+
+// ベクトルの長さを計算
+float Length(const Vector3& v)
+{
+	return std::sqrtf(v.x * v.x + v.y * v.y + v.z * v.z);
+}
+
+// ベクトルの正規化（長さを1にする）
+Vector3 Normalize(const Vector3& v)
+{
+	float len = Length(v);
+	if (len < 1e-6f)
+	{
+		return Vector3{ 0.0f, 0.0f, 0.0f };
+	}
+	return Vector3{ v.x / len, v.y / len, v.z / len };
+}
+
+// クロス積（外積）の計算
+Vector3 Cross(const Vector3& v1, const Vector3& v2)
+{
+	return Vector3{
+		v1.y * v2.z - v1.z * v2.y,
+		v1.z * v2.x - v1.x * v2.z,
+		v1.x * v2.y - v1.y * v2.x
+	};
+}
+
+void DrawPlane(const Plane& plane, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color)
+{
+	// 1. 中心点を決める
+	Vector3 center = PlaneMultiply(plane.distance, plane.normal);
+	Vector3 perpendiculars[4];
+
+	// 2. 法線と垂直なベクトルを1つ求め、正規化する
+	perpendiculars[0] = Normalize(Perpendicular(plane.normal));
+
+	// 3. 2の逆ベクトルを求める
+	perpendiculars[1] = Vector3{ -perpendiculars[0].x, -perpendiculars[0].y, -perpendiculars[0].z };
+
+	// 4. 2と法線とのクロス積を求める
+	perpendiculars[2] = Cross(plane.normal, perpendiculars[0]);
+
+	// 5. 4の逆ベクトルを求める
+	perpendiculars[3] = Vector3{ -perpendiculars[2].x, -perpendiculars[2].y, -perpendiculars[2].z };
+
+	// 6. 2〜5のベクトルを中心点にそれぞれ定数倍（ここでは2.0f）して足すと4頂点が出来上がる
+	Vector3 points[4];
+	for (int32_t index = 0; index < 4; ++index)
+	{
+		Vector3 extend = PlaneMultiply(2.0f, perpendiculars[index]);
+		Vector3 point = Add(center, extend);
+
+		// 3D空間上の頂点をスクリーン座標に変換
+		points[index] = Transform(Transform(point, viewProjectionMatrix), viewportMatrix);
+	}
+
+	// 各頂点を結んでDrawLineで矩形を描画する（0->2->1->3->0 の順で結ぶと綺麗な矩形枠になります）
+	Novice::DrawLine(int(points[0].x), int(points[0].y), int(points[2].x), int(points[2].y), color);
+	Novice::DrawLine(int(points[2].x), int(points[2].y), int(points[1].x), int(points[1].y), color);
+	Novice::DrawLine(int(points[1].x), int(points[1].y), int(points[3].x), int(points[3].y), color);
+	Novice::DrawLine(int(points[3].x), int(points[3].y), int(points[0].x), int(points[0].y), color);
 }
 
 void DrawGrid(const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix) {
@@ -443,10 +526,9 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// 変数の初期化（ループの外に出すことで毎フレーム初期化されるのを防ぐ）
 	Vector3 cameraTranslate = { 0.0f, 2.5f, -10.0f };
 	Vector3 cameraRotate = { 0.26f, 0.0f, 0.0f };
-	Sphere sphere1 = { {0.0f, 0.0f, 0.0f}, 1.0f };
+	Sphere sphere = { {0.0f, 0.0f, 0.0f}, 1.0f };
 
-	// 初期位置を近づけて、最初から当たり判定の確認をしやすくしています
-	Sphere sphere2 = { {1.2f, 0.0f, 0.0f}, 0.5f };
+	Plane plane = { {0.0f, 1.0f, 0.0f}, 0.0f };
 
 	Segment segment{ {-2.0f,-1.0f,0.0f},{3.0f,2.0f,2.0f} };
 	Vector3 point{ -1.5f,0.6f,0.6f };
@@ -472,11 +554,11 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 		ImGui::DragFloat3("CameraTranslate", &cameraTranslate.x, 0.01f);
 		ImGui::DragFloat3("CameraRotate", &cameraRotate.x, 0.01f);
-		ImGui::DragFloat3("SphereCenter1", &sphere1.center.x, 0.01f);
-		ImGui::DragFloat("SphereRadius1", &sphere1.radius, 0.01f);
+		ImGui::DragFloat3("SphereCenter1", &sphere.center.x, 0.01f);
+		ImGui::DragFloat("SphereRadius1", &sphere.radius, 0.01f);
 
-		ImGui::DragFloat3("SphereCenter2", &sphere2.center.x, 0.01f);
-		ImGui::DragFloat("SphereRadius2", &sphere2.radius, 0.01f);
+		ImGui::DragFloat3("Plane.Normal", &plane.normal.x, 0.01f);
+		ImGui::DragFloat("PlaneDistance", &plane.distance, 0.01f);
 
 		ImGui::End();
 
@@ -500,29 +582,19 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 		DrawGrid(viewProjectionMatrix, viewportMatrix);
 
-		Sphere pointSphere{ point,0.01f };
-		Sphere closestPointSphere{ closestPoint,0.01f };
+		// 当たっていたら赤色、それ以外は白色（WHITE）にする
+		uint32_t color = 0xFFFFFFFF; // 初期値は白色
 
-		// 3D空間上の頂点をスクリーン座標に変換
-		Vector3 startNdc = Transform(segment.origin, viewProjectionMatrix);
-		Vector3 startScreen = Transform(startNdc, viewportMatrix);
-
-		Vector3 endPos = Add(segment.origin, segment.diff);
-		Vector3 endNdc = Transform(endPos, viewProjectionMatrix);
-		Vector3 endScreen = Transform(endNdc, viewportMatrix);
-
-		// 当たっていたらボール1を赤色、それ以外は白色（WHITE）にする
-		uint32_t sphere1Color = 0xFFFFFFFF; // 初期値は白色
-		if (IsCollision(sphere1, sphere2))
+		if (IsCollision(sphere, plane))
 		{
-			sphere1Color = 0xFF0000FF; // 赤色のABGR（またはRGBAカラーコード。環境によりREDでも可）
+			color = 0xFF0000FF; // 赤色
 		}
 
-		// ボール1を描画（判定結果の色を適用）
-		DrawSphere(sphere1, viewProjectionMatrix, viewportMatrix, sphere1Color);
+		// 平面を描画（追加！）
+		DrawPlane(plane, viewProjectionMatrix, viewportMatrix, color);
 
-		// 【適用】ボール2を描画（白色固定）
-		DrawSphere(sphere2, viewProjectionMatrix, viewportMatrix, 0xFFFFFFFF);
+		// ボールを描画（判定結果の色を適用）
+		DrawSphere(sphere, viewProjectionMatrix, viewportMatrix, color);
 
 		///
 		/// ↑描画処理ここまで
