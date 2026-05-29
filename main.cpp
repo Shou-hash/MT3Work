@@ -1,5 +1,7 @@
 #include <Novice.h>
 #include <cmath>
+#include <cstdint>
+#include <imgui.h>
 
 const char kWindowTitle[] = "LC1C_12_ショウ_ズーウェン";
 
@@ -15,7 +17,17 @@ struct Matrix4x4
 	float m[4][4];
 };
 
-Matrix4x4 Inverse(const Matrix4x4& m) 
+// クロス積（外積）を計算する関数（追加）
+Vector3 Cross(const Vector3& v1, const Vector3& v2)
+{
+	return Vector3{
+		v1.y * v2.z - v1.z * v2.y,
+		v1.z * v2.x - v1.x * v2.z,
+		v1.x * v2.y - v1.y * v2.x
+	};
+}
+
+Matrix4x4 Inverse(const Matrix4x4& m)
 {
 	Matrix4x4 result = {};
 	float a[4][8] = { 0 };
@@ -62,7 +74,6 @@ Matrix4x4 Inverse(const Matrix4x4& m)
 Vector3 Transform(const Vector3& vector, const Matrix4x4& matrix)
 {
 	Vector3 result;
-
 
 	// 平行移動（m[3][*]）を足し合わせ、最後にwで割る
 	result.x = (vector.x * matrix.m[0][0] + vector.y * matrix.m[1][0] + vector.z * matrix.m[2][0] + 1.0f * matrix.m[3][0]);
@@ -216,6 +227,12 @@ void MatrixScreenPrintf(int x, int y, const Matrix4x4& matrix, const char* label
 	}
 }
 
+// ベクトルの値を画面上に表示する関数（追加）
+void VectorScreenPrintf(int x, int y, const Vector3& vector, const char* label)
+{
+	Novice::ScreenPrintf(x, y, "%s: %.2f, %.2f, %.2f", label, vector.x, vector.y, vector.z);
+}
+
 // Windowsアプリでのエントリーポイント(main関数)
 int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
@@ -235,6 +252,10 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 	Vector3 rotate{};
 	Vector3 translate{};
+
+	// クロス積を確認するためのテスト用ベクトル
+	Vector3 v1 = { 1.0f, 2.0f, 3.0f };
+	Vector3 v2 = { 4.0f, 5.0f, 6.0f };
 
 	// ウィンドウの×ボタンが押されるまでループ
 	while (Novice::ProcessMessage() == 0) {
@@ -278,6 +299,9 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			screenVertices[i] = Transform(ndcVertex, viewportMatrix);
 		}
 
+		// クロス積の毎フレーム計算
+		Vector3 crossResult = Cross(v1, v2);
+
 		///
 		/// ↑更新処理ここまで
 		///
@@ -292,6 +316,11 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			int(screenVertices[2].x), int(screenVertices[2].y),
 			RED, kFillModeSolid
 		);
+
+		// クロス積の結果を画面左上にテキスト描画（指摘事項の解決）
+		VectorScreenPrintf(20, 20, v1, "v1");
+		VectorScreenPrintf(20, 40, v2, "v2");
+		VectorScreenPrintf(20, 60, crossResult, "Cross(v1, v2)");
 
 		///
 		/// ↑描画処理ここまで
