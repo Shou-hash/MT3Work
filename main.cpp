@@ -304,16 +304,24 @@ Matrix4x4 MakeViewportMatrix(float left, float top, float width, float height, f
 	return result;
 }
 
-bool IsCollision(const Sphere& sphere, const Plane& plane)
+bool IsCollision(const Segment& segment, const Plane& plane)
 {
-	// 平面の法線ベクトルと球の中心点の内積を計算
-	float dot = sphere.center.x * plane.normal.x + sphere.center.y * plane.normal.y + sphere.center.z * plane.normal.z;
+	// 1. 平面の法線ベクトルと線分の方向ベクトルの内積を計算（垂直かどうかの判定用）
+	float dot = plane.normal.x * segment.diff.x + plane.normal.y * segment.diff.y + plane.normal.z * segment.diff.z;
 
-	// 平面から球の中心までの符号付き距離を計算
-	float distance = dot - plane.distance;
+	// ゼロ除算の防止（内積がほぼゼロ = 平面と線分が平行な場合は交差しない）
+	if (std::fabsf(dot) < 1e-6f)
+	{
+		return false;
+	}
 
-	// 距離の絶対値が球の半径以下なら衝突している
-	if (std::fabsf(distance) <= sphere.radius)
+	// 2. 平面の方程式から交点までのパラメータ t を計算
+	// t = (distance - (origin ・ normal)) / (diff ・ normal)
+	float dotOrigin = segment.origin.x * plane.normal.x + segment.origin.y * plane.normal.y + segment.origin.z * plane.normal.z;
+	float t = (plane.distance - dotOrigin) / dot;
+
+	// 3. t が 0.0f 〜 1.0f の間であれば線分が平面と交差している
+	if (t >= 0.0f && t <= 1.0f)
 	{
 		return true;
 	}
@@ -554,11 +562,13 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 		ImGui::DragFloat3("CameraTranslate", &cameraTranslate.x, 0.01f);
 		ImGui::DragFloat3("CameraRotate", &cameraRotate.x, 0.01f);
-		ImGui::DragFloat3("SphereCenter1", &sphere.center.x, 0.01f);
-		ImGui::DragFloat("SphereRadius1", &sphere.radius, 0.01f);
 
 		ImGui::DragFloat3("Plane.Normal", &plane.normal.x, 0.01f);
 		ImGui::DragFloat("PlaneDistance", &plane.distance, 0.01f);
+
+		// 線分の始点と方向ベクトルもImGuiで動かせるように追加
+		ImGui::DragFloat3("Segment.Origin", &segment.origin.x, 0.01f);
+		ImGui::DragFloat3("Segment.Diff", &segment.diff.x, 0.01f);
 
 		ImGui::End();
 
@@ -582,19 +592,31 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 		DrawGrid(viewProjectionMatrix, viewportMatrix);
 
+		// 平面の安全な正規化処理
+		plane.normal = Normalize(plane.normal);
+
 		// 当たっていたら赤色、それ以外は白色（WHITE）にする
 		uint32_t color = 0xFFFFFFFF; // 初期値は白色
 
-		if (IsCollision(sphere, plane))
+		// 引数を正しく segment に修正
+		if (IsCollision(segment, plane))
 		{
 			color = 0xFF0000FF; // 赤色
 		}
 
-		// 平面を描画（追加！）
+		// 平面を描画
 		DrawPlane(plane, viewProjectionMatrix, viewportMatrix, color);
 
-		// ボールを描画（判定結果の色を適用）
-		DrawSphere(sphere, viewProjectionMatrix, viewportMatrix, color);
+		// 【追加】線分（Segment）を画面に描画して視覚化する
+		Vector3 startNdc = Transform(segment.origin, viewProjectionMatrix);
+		Vector3 startScreen = Transform(startNdc, viewportMatrix);
+
+		Vector3 endPos = Add(segment.origin, segment.diff);
+		Vector3 endNdc = Transform(endPos, viewProjectionMatrix);
+		Vector3 endScreen = Transform(endNdc, viewportMatrix);
+
+		// 線分を描画（判定結果の色を適用）
+		Novice::DrawLine(int(startScreen.x), int(startScreen.y), int(endScreen.x), int(endScreen.y), color);
 
 		///
 		/// ↑描画処理ここまで
