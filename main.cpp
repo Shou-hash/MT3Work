@@ -267,23 +267,70 @@ float Length(const Vector3& v)
 	return std::sqrtf(v.x * v.x + v.y * v.y + v.z * v.z);
 }
 
-// 【新規追加】AABBと球の衝突判定関数
+// AABBと球の衝突判定関数
 bool IsCollision(const AABB& aabb, const Sphere& sphere)
 {
-	// 球の中心座標をAABBの[min, max]内にclampして最近接点を求める
 	Vector3 closestPoint{
 		std::clamp(sphere.center.x, aabb.min.x, aabb.max.x),
 		std::clamp(sphere.center.y, aabb.min.y, aabb.max.y),
 		std::clamp(sphere.center.z, aabb.min.z, aabb.max.z)
 	};
 
-	// 最近接点と球の中心との距離を求める
 	float distance = Length(Subtract(closestPoint, sphere.center));
 
-	// 距離が半径よりも小さければ衝突
 	if (distance <= sphere.radius)
 	{
 		return true;
+	}
+
+	return false;
+}
+
+// 【新規追加】AABBと線分（Segment）の衝突判定関数
+bool IsCollision(const AABB& aabb, const Segment& segment)
+{
+	// 各軸において交差するtの範囲を求める
+	float tNearX = (aabb.min.x - segment.origin.x) / segment.diff.x;
+	float tFarX = (aabb.max.x - segment.origin.x) / segment.diff.x;
+	float tNearY = (aabb.min.y - segment.origin.y) / segment.diff.y;
+	float tFarY = (aabb.max.y - segment.origin.y) / segment.diff.y;
+	float tNearZ = (aabb.min.z - segment.origin.z) / segment.diff.z;
+	float tFarZ = (aabb.max.z - segment.origin.z) / segment.diff.z;
+
+	// 0除算（平行な場合）のNaN対応・処理のパッチ
+	if (std::isnan(tNearX) || std::isnan(tFarX)) {
+		if (segment.origin.x < aabb.min.x || segment.origin.x > aabb.max.x) return false;
+		tNearX = -std::numeric_limits<float>::infinity();
+		tFarX = std::numeric_limits<float>::infinity();
+	}
+	if (std::isnan(tNearY) || std::isnan(tFarY)) {
+		if (segment.origin.y < aabb.min.y || segment.origin.y > aabb.max.y) return false;
+		tNearY = -std::numeric_limits<float>::infinity();
+		tFarY = std::numeric_limits<float>::infinity();
+	}
+	if (std::isnan(tNearZ) || std::isnan(tFarZ)) {
+		if (segment.origin.z < aabb.min.z || segment.origin.z > aabb.max.z) return false;
+		tNearZ = -std::numeric_limits<float>::infinity();
+		tFarZ = std::numeric_limits<float>::infinity();
+	}
+
+	// 近い方と遠い方の順序を正しく並び替える
+	if (tNearX > tFarX) std::swap(tNearX, tFarX);
+	if (tNearY > tFarY) std::swap(tNearY, tFarY);
+	if (tNearZ > tFarZ) std::swap(tNearZ, tFarZ);
+
+	// AABBとの衝突点（貫通点）のtが小さい方（最大値を取る）
+	float tmin = (std::max)((std::max)(tNearX, tNearY), tNearZ);
+	// AABBとの衝突点（貫通点）のtが大きい方（最小値を取る）
+	float tmax = (std::min)((std::min)(tFarX, tFarY), tFarZ);
+
+	// トラックが重なっており、かつ線分の範囲(0.0f 〜 1.0f)に交差が収まっている場合衝突
+	if (tmin <= tmax)
+	{
+		if (tmin <= 1.0f && tmax >= 0.0f)
+		{
+			return true;
+		}
 	}
 
 	return false;
@@ -324,6 +371,18 @@ void DrawAABB(const AABB& aabb, const Matrix4x4& viewProjectionMatrix, const Mat
 	Novice::DrawLine(int(screenVertices[1].x), int(screenVertices[1].y), int(screenVertices[5].x), int(screenVertices[5].y), color);
 	Novice::DrawLine(int(screenVertices[2].x), int(screenVertices[2].y), int(screenVertices[6].x), int(screenVertices[6].y), color);
 	Novice::DrawLine(int(screenVertices[3].x), int(screenVertices[3].y), int(screenVertices[7].x), int(screenVertices[7].y), color);
+}
+
+// 【新規追加】線分（Segment）の描画関数
+void DrawSegment(const Segment& segment, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color)
+{
+	Vector3 startPos = segment.origin;
+	Vector3 endPos = Add(segment.origin, segment.diff);
+
+	Vector3 startScreen = Transform(Transform(startPos, viewProjectionMatrix), viewportMatrix);
+	Vector3 endScreen = Transform(Transform(endPos, viewProjectionMatrix), viewportMatrix);
+
+	Novice::DrawLine(int(startScreen.x), int(startScreen.y), int(endScreen.x), int(endScreen.y), color);
 }
 
 void DrawGrid(const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix) {
@@ -404,13 +463,16 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	Vector3 cameraTranslate = { 0.0f, 2.5f, -10.0f };
 	Vector3 cameraRotate = { 0.26f, 0.0f, 0.0f };
 
-	// 球の初期設定
-	Sphere sphere = { {0.0f, 0.0f, 0.0f}, 0.5f };
-
-	// AABBの初期設定（1つに変更）
+	// AABBの設定
 	AABB aabb{
 		{-0.5f, -0.5f, -0.5f},
 		{ 0.5f,  0.5f,  0.5f}
+	};
+
+	// 線分（Segment）の設定（スライドの初期値）
+	Segment segment{
+		{-0.7f, 0.3f, 0.0f},
+		{2.0f, -0.5f, 0.0f}
 	};
 
 	while (Novice::ProcessMessage() == 0) {
@@ -440,15 +502,15 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		ImGui::DragFloat3("CameraTranslate", &cameraTranslate.x, 0.01f);
 		ImGui::DragFloat3("CameraRotate", &cameraRotate.x, 0.01f);
 
-		// ImGuiでAABBと球のパラメータを変更できるようにする
+		// ImGuiで各パラメータを変更可能にする
 		ImGui::Separator();
 		ImGui::Text("AABB");
 		ImGui::DragFloat3("AABB Min", &aabb.min.x, 0.01f);
 		ImGui::DragFloat3("AABB Max", &aabb.max.x, 0.01f);
 
-		ImGui::Text("Sphere");
-		ImGui::DragFloat3("Sphere Center", &sphere.center.x, 0.01f);
-		ImGui::DragFloat("Sphere Radius", &sphere.radius, 0.01f);
+		ImGui::Text("Segment");
+		ImGui::DragFloat3("Segment Origin", &segment.origin.x, 0.01f);
+		ImGui::DragFloat3("Segment Diff", &segment.diff.x, 0.01f);
 
 		// minとmaxが入れ替わらないように防ぐ処理
 		aabb.min.x = (std::min)(aabb.min.x, aabb.max.x);
@@ -476,16 +538,16 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 		DrawGrid(viewProjectionMatrix, viewportMatrix);
 
-		// 衝突状態によって色を変える処理
-		uint32_t color = 0xFFFFFFFF; // 通常時は白色
-		if (IsCollision(aabb, sphere))
+		// 線分との衝突判定
+		uint32_t aabbColor = 0xFFFFFFFF;
+		uint32_t segmentColor = 0xFFFFFFFF;
+		if (IsCollision(aabb, segment))
 		{
-			color = 0xFF0000FF; // 衝突時は赤色
+			aabbColor = 0xFF0000FF;    // 衝突時は四角形を赤に
 		}
 
-		// AABBと球を描画する
-		DrawAABB(aabb, viewProjectionMatrix, viewportMatrix, color);
-		DrawSphere(sphere, viewProjectionMatrix, viewportMatrix, 0xFFFFFFFF);
+		DrawAABB(aabb, viewProjectionMatrix, viewportMatrix, aabbColor);
+		DrawSegment(segment, viewProjectionMatrix, viewportMatrix, segmentColor);
 
 		///
 		/// ↑描画処理ここまで
