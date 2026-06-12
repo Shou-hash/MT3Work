@@ -49,6 +49,12 @@ struct Plane
 	float distance;
 };
 
+// ★追加
+struct Triangle
+{
+	Vector3 vertices[3];
+};
+
 // ベクトルの足し算
 Vector3 Add(const Vector3& v1, const Vector3& v2)
 {
@@ -371,6 +377,89 @@ Vector3 Cross(const Vector3& v1, const Vector3& v2)
 	};
 }
 
+// ドット積（内積）の計算（★追加）
+float Dot(const Vector3& v1, const Vector3& v2)
+{
+	return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
+}
+
+// ★追加：三角形と線分の衝突判定関数
+bool IsCollision(const Triangle& triangle, const Segment& segment)
+{
+	// 三角形の各頂点からエッジベクトルを計算
+	Vector3 v01 = Subtract(triangle.vertices[1], triangle.vertices[0]);
+	Vector3 v02 = Subtract(triangle.vertices[2], triangle.vertices[0]);
+
+	// 三角形の法線を計算して正規化
+	Vector3 normal = Normalize(Cross(v01, v02));
+
+	// 1. 三角形が乗っている平面と線分の交差判定を行う
+	float distance = Dot(triangle.vertices[0], normal);
+	float dot = Dot(normal, segment.diff);
+
+	// 平面と線分が平行な場合は交差しない
+	if (std::fabsf(dot) < 1e-6f)
+	{
+		return false;
+	}
+
+	// 交点までのパラメータ t を計算
+	float dotOrigin = Dot(segment.origin, normal);
+	float t = (distance - dotOrigin) / dot;
+
+	// 線分の範囲外に交点がある場合は衝突していない
+	if (t < 0.0f || t > 1.0f)
+	{
+		return false;
+	}
+
+	// 平面上の交点 p を計算
+	Vector3 p = Add(segment.origin, Vector3{ segment.diff.x * t, segment.diff.y * t, segment.diff.z * t });
+
+	// 各エッジベクトルと、対応する頂点から交点pへのベクトルを計算
+	Vector3 v12 = Subtract(triangle.vertices[2], triangle.vertices[1]);
+	Vector3 v20 = Subtract(triangle.vertices[0], triangle.vertices[2]);
+
+	Vector3 v0p = Subtract(p, triangle.vertices[0]);
+	Vector3 v1p = Subtract(p, triangle.vertices[1]);
+	Vector3 v2p = Subtract(p, triangle.vertices[2]);
+
+	// 各辺を結んだベクトルと、頂点と衝突点pを結んだベクトルのクロス積を取る
+	Vector3 cross01 = Cross(v01, v0p);
+	Vector3 cross12 = Cross(v12, v1p);
+	Vector3 cross20 = Cross(v20, v2p);
+
+	// すべての小三角形のクロス積と法線が同じ方向を向いていたら衝突
+	if (Dot(cross01, normal) >= 0.0f &&
+		Dot(cross12, normal) >= 0.0f &&
+		Dot(cross20, normal) >= 0.0f) {
+		// 衝突
+		return true;
+	}
+
+	return false;
+}
+
+// ★追加：三角形を描画するDrawTriangle関数
+void DrawTriangle(
+	const Triangle& triangle, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color)
+{
+	Vector3 screenVertices[3];
+	for (int i = 0; i < 3; ++i)
+	{
+		// 三角形の各頂点をスクリーン座標系まで変換してNovice::DrawTriangleを利用する
+		Vector3 ndc = Transform(triangle.vertices[i], viewProjectionMatrix);
+		screenVertices[i] = Transform(ndc, viewportMatrix);
+	}
+
+	Novice::DrawTriangle(
+		int(screenVertices[0].x), int(screenVertices[0].y),
+		int(screenVertices[1].x), int(screenVertices[1].y),
+		int(screenVertices[2].x), int(screenVertices[2].y),
+		color, kFillModeWireFrame
+	);
+}
+
 void DrawPlane(const Plane& plane, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color)
 {
 	// 1. 中心点を決める
@@ -538,7 +627,15 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 	Plane plane = { {0.0f, 1.0f, 0.0f}, 0.0f };
 
-	Segment segment{ {-2.0f,-1.0f,0.0f},{3.0f,2.0f,2.0f} };
+	// ★初期値設定（三角形）
+	Triangle triangle{ {
+		{ 0.0f,  1.0f, 0.0f },
+		{ 1.0f, -0.5f, 0.0f },
+		{-1.0f, -0.5f, 0.0f }
+	} };
+
+	// 線分の初期化（始点と差分）
+	Segment segment{ { 0.0f, 0.5f, -2.0f }, { 0.0f, 0.0f, 4.0f } };
 	Vector3 point{ -1.5f,0.6f,0.6f };
 
 	Vector3 project = Project(Subtract(point, segment.origin), segment.diff);
@@ -563,10 +660,15 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		ImGui::DragFloat3("CameraTranslate", &cameraTranslate.x, 0.01f);
 		ImGui::DragFloat3("CameraRotate", &cameraRotate.x, 0.01f);
 
-		ImGui::DragFloat3("Plane.Normal", &plane.normal.x, 0.01f);
-		ImGui::DragFloat("PlaneDistance", &plane.distance, 0.01f);
+		// ImGuiで線の始点と差分、三角形の各頂点を変更できるようにする
+		ImGui::Separator();
+		ImGui::Text("Triangle Vertices");
+		ImGui::DragFloat3("Vertex0", &triangle.vertices[0].x, 0.01f);
+		ImGui::DragFloat3("Vertex1", &triangle.vertices[1].x, 0.01f);
+		ImGui::DragFloat3("Vertex2", &triangle.vertices[2].x, 0.01f);
 
-		// 線分の始点と方向ベクトルもImGuiで動かせるように追加
+		ImGui::Separator();
+		ImGui::Text("Line Segment");
 		ImGui::DragFloat3("Segment.Origin", &segment.origin.x, 0.01f);
 		ImGui::DragFloat3("Segment.Diff", &segment.diff.x, 0.01f);
 
@@ -592,22 +694,19 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 		DrawGrid(viewProjectionMatrix, viewportMatrix);
 
-		// 平面の安全な正規化処理
-		plane.normal = Normalize(plane.normal);
-
-		// 当たっていたら赤色、それ以外は白色（WHITE）にする
+		// 三角形と線を表示し、衝突していたら線を赤く表示する。衝突していなければ白。
 		uint32_t color = 0xFFFFFFFF; // 初期値は白色
 
-		// 引数を正しく segment に修正
-		if (IsCollision(segment, plane))
+		// 三角形と線分の衝突判定
+		if (IsCollision(triangle, segment))
 		{
 			color = 0xFF0000FF; // 赤色
 		}
 
-		// 平面を描画
-		DrawPlane(plane, viewProjectionMatrix, viewportMatrix, color);
+		// 三角形を描画
+		DrawTriangle(triangle, viewProjectionMatrix, viewportMatrix, color);
 
-		// 【追加】線分（Segment）を画面に描画して視覚化する
+		// 線分（Segment）を画面に描画して視覚化する
 		Vector3 startNdc = Transform(segment.origin, viewProjectionMatrix);
 		Vector3 startScreen = Transform(startNdc, viewportMatrix);
 
