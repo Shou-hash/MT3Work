@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <numbers>
 #include <imgui.h>
+#include <algorithm> // std::min, std::max 用
 #define _USE_MATH_DEFINES
 
 const char kWindowTitle[] = "LC1C_12_ショウ_ズーウェン";
@@ -382,62 +383,19 @@ Vector3 Cross(const Vector3& v1, const Vector3& v2)
 	};
 }
 
-// ドット積（内積）の計算（★追加）
+// ドット積（内積）の計算
 float Dot(const Vector3& v1, const Vector3& v2)
 {
 	return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
 }
 
-// ★追加：三角形と線分の衝突判定関数
-bool IsCollision(const Triangle& triangle, const Segment& segment)
+// AABBとAABBの衝突判定関数（スライドの疑似コード仕様に修正）
+bool IsCollision(const AABB& a, const AABB& b)
 {
-	// 三角形の各頂点からエッジベクトルを計算
-	Vector3 v01 = Subtract(triangle.vertices[1], triangle.vertices[0]);
-	Vector3 v02 = Subtract(triangle.vertices[2], triangle.vertices[0]);
-
-	// 三角形の法線を計算して正規化
-	Vector3 normal = Normalize(Cross(v01, v02));
-
-	// 1. 三角形が乗っている平面と線分の交差判定を行う
-	float distance = Dot(triangle.vertices[0], normal);
-	float dot = Dot(normal, segment.diff);
-
-	// 平面と線分が平行な場合は交差しない
-	if (std::fabsf(dot) < 1e-6f)
+	if ((a.min.x <= b.max.x && a.max.x >= b.min.x) && // x軸
+		(a.min.y <= b.max.y && a.max.y >= b.min.y) && // y軸
+		(a.min.z <= b.max.z && a.max.z >= b.min.z))   // z軸
 	{
-		return false;
-	}
-
-	// 交点までのパラメータ t を計算
-	float dotOrigin = Dot(segment.origin, normal);
-	float t = (distance - dotOrigin) / dot;
-
-	// 線分の範囲外に交点がある場合は衝突していない
-	if (t < 0.0f || t > 1.0f)
-	{
-		return false;
-	}
-
-	// 平面上の交点 p を計算
-	Vector3 p = Add(segment.origin, Vector3{ segment.diff.x * t, segment.diff.y * t, segment.diff.z * t });
-
-	// 各エッジベクトルと、対応する頂点から交点pへのベクトルを計算
-	Vector3 v12 = Subtract(triangle.vertices[2], triangle.vertices[1]);
-	Vector3 v20 = Subtract(triangle.vertices[0], triangle.vertices[2]);
-
-	Vector3 v0p = Subtract(p, triangle.vertices[0]);
-	Vector3 v1p = Subtract(p, triangle.vertices[1]);
-	Vector3 v2p = Subtract(p, triangle.vertices[2]);
-
-	// 各辺を結んだベクトルと、頂点と衝突点pを結んだベクトルのクロス積を取る
-	Vector3 cross01 = Cross(v01, v0p);
-	Vector3 cross12 = Cross(v12, v1p);
-	Vector3 cross20 = Cross(v20, v2p);
-
-	// すべての小三角形のクロス積と法線が同じ方向を向いていたら衝突
-	if (Dot(cross01, normal) >= 0.0f &&
-		Dot(cross12, normal) >= 0.0f &&
-		Dot(cross20, normal) >= 0.0f) {
 		// 衝突
 		return true;
 	}
@@ -445,7 +403,7 @@ bool IsCollision(const Triangle& triangle, const Segment& segment)
 	return false;
 }
 
-// ★追加：三角形を描画するDrawTriangle関数
+// 三角形を描画するDrawTriangle関数
 void DrawTriangle(
 	const Triangle& triangle, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color)
 {
@@ -463,6 +421,48 @@ void DrawTriangle(
 		int(screenVertices[2].x), int(screenVertices[2].y),
 		color, kFillModeWireFrame
 	);
+}
+
+// AABBの描画関数
+void DrawAABB(const AABB& aabb, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color)
+{
+	// 1. AABBを構成する8頂点をmin/maxを使って求める
+	Vector3 vertices[8] = {
+		{ aabb.min.x, aabb.min.y, aabb.min.z }, // 0
+		{ aabb.max.x, aabb.min.y, aabb.min.z }, // 1
+		{ aabb.min.x, aabb.max.y, aabb.min.z }, // 2
+		{ aabb.max.x, aabb.max.y, aabb.min.z }, // 3
+		{ aabb.min.x, aabb.min.y, aabb.max.z }, // 4
+		{ aabb.max.x, aabb.min.y, aabb.max.z }, // 5
+		{ aabb.min.x, aabb.max.y, aabb.max.z }, // 6
+		{ aabb.max.x, aabb.max.y, aabb.max.z }  // 7
+	};
+
+	Vector3 screenVertices[8];
+	for (int i = 0; i < 8; ++i)
+	{
+		Vector3 ndc = Transform(vertices[i], viewProjectionMatrix);
+		screenVertices[i] = Transform(ndc, viewportMatrix);
+	}
+
+	// 2. 8頂点をそれぞれ結んで線を引く
+	// 手前の面 (Z min)
+	Novice::DrawLine(int(screenVertices[0].x), int(screenVertices[0].y), int(screenVertices[1].x), int(screenVertices[1].y), color);
+	Novice::DrawLine(int(screenVertices[1].x), int(screenVertices[1].y), int(screenVertices[3].x), int(screenVertices[3].y), color);
+	Novice::DrawLine(int(screenVertices[3].x), int(screenVertices[3].y), int(screenVertices[2].x), int(screenVertices[2].y), color);
+	Novice::DrawLine(int(screenVertices[2].x), int(screenVertices[2].y), int(screenVertices[0].x), int(screenVertices[0].y), color);
+
+	// 奥の面 (Z max)
+	Novice::DrawLine(int(screenVertices[4].x), int(screenVertices[4].y), int(screenVertices[5].x), int(screenVertices[5].y), color);
+	Novice::DrawLine(int(screenVertices[5].x), int(screenVertices[5].y), int(screenVertices[7].x), int(screenVertices[7].y), color);
+	Novice::DrawLine(int(screenVertices[7].x), int(screenVertices[7].y), int(screenVertices[6].x), int(screenVertices[6].y), color);
+	Novice::DrawLine(int(screenVertices[6].x), int(screenVertices[6].y), int(screenVertices[4].x), int(screenVertices[4].y), color);
+
+	// 手前と奥を繋ぐ辺
+	Novice::DrawLine(int(screenVertices[0].x), int(screenVertices[0].y), int(screenVertices[4].x), int(screenVertices[4].y), color);
+	Novice::DrawLine(int(screenVertices[1].x), int(screenVertices[1].y), int(screenVertices[5].x), int(screenVertices[5].y), color);
+	Novice::DrawLine(int(screenVertices[2].x), int(screenVertices[2].y), int(screenVertices[6].x), int(screenVertices[6].y), color);
+	Novice::DrawLine(int(screenVertices[3].x), int(screenVertices[3].y), int(screenVertices[7].x), int(screenVertices[7].y), color);
 }
 
 void DrawPlane(const Plane& plane, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color)
@@ -632,16 +632,25 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 	Plane plane = { {0.0f, 1.0f, 0.0f}, 0.0f };
 
-	// ★初期値設定（三角形）
 	Triangle triangle{ {
 		{ 0.0f,  1.0f, 0.0f },
 		{ 1.0f, -0.5f, 0.0f },
 		{-1.0f, -0.5f, 0.0f }
 	} };
 
-	// 線分の初期化（始点と差分）
 	Segment segment{ { 0.0f, 0.5f, -2.0f }, { 0.0f, 0.0f, 4.0f } };
 	Vector3 point{ -1.5f,0.6f,0.6f };
+
+	// AABBの実装例の初期値
+	AABB aabb1{
+		{-0.5f, -0.5f, -0.5f},
+		{ 0.0f,  0.0f,  0.0f}
+	};
+
+	AABB aabb2{
+		{0.2f, 0.2f, 0.2f},
+		{1.0f, 1.0f, 1.0f}
+	};
 
 	Vector3 project = Project(Subtract(point, segment.origin), segment.diff);
 
@@ -660,22 +669,65 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		/// ↓更新処理ここから
 		///
 
+		// WASDによるカメラ位置（cameraTranslate）の変更処理
+		float cameraSpeed = 0.05f; // カメラの移動速度
+		if (keys[DIK_W]) {
+			cameraTranslate.z += cameraSpeed; // 前へ移動
+		}
+		if (keys[DIK_S]) {
+			cameraTranslate.z -= cameraSpeed; // 後ろへ移動
+		}
+		if (keys[DIK_A]) {
+			cameraTranslate.x -= cameraSpeed; // 左へ移動
+		}
+		if (keys[DIK_D]) {
+			cameraTranslate.x += cameraSpeed; // 右へ移動
+		}
+
+		// 矢印キーによるカメラ角度（cameraRotate）の変更処理
+		float rotateSpeed = 0.02f; // カメラの回転速度
+		if (keys[DIK_UP]) {
+			cameraRotate.x += rotateSpeed; // 上を向く
+		}
+		if (keys[DIK_DOWN]) {
+			cameraRotate.x -= rotateSpeed; // 下を向く
+		}
+		if (keys[DIK_LEFT]) {
+			cameraRotate.y -= rotateSpeed; // 左を向く
+		}
+		if (keys[DIK_RIGHT]) {
+			cameraRotate.y += rotateSpeed; // 右を向く
+		}
+
 		ImGui::Begin("Window");
 
 		ImGui::DragFloat3("CameraTranslate", &cameraTranslate.x, 0.01f);
 		ImGui::DragFloat3("CameraRotate", &cameraRotate.x, 0.01f);
 
-		// ImGuiで線の始点と差分、三角形の各頂点を変更できるようにする
+		// ImGuiでAABBのパラメータを変更できるようにする
 		ImGui::Separator();
-		ImGui::Text("Triangle Vertices");
-		ImGui::DragFloat3("Vertex0", &triangle.vertices[0].x, 0.01f);
-		ImGui::DragFloat3("Vertex1", &triangle.vertices[1].x, 0.01f);
-		ImGui::DragFloat3("Vertex2", &triangle.vertices[2].x, 0.01f);
+		ImGui::Text("AABB 1");
+		ImGui::DragFloat3("AABB1 Min", &aabb1.min.x, 0.01f);
+		ImGui::DragFloat3("AABB1 Max", &aabb1.max.x, 0.01f);
 
-		ImGui::Separator();
-		ImGui::Text("Line Segment");
-		ImGui::DragFloat3("Segment.Origin", &segment.origin.x, 0.01f);
-		ImGui::DragFloat3("Segment.Diff", &segment.diff.x, 0.01f);
+		ImGui::Text("AABB 2");
+		ImGui::DragFloat3("AABB2 Min", &aabb2.min.x, 0.01f);
+		ImGui::DragFloat3("AABB2 Max", &aabb2.max.x, 0.01f);
+
+		// minとmaxが入れ替わらないように注意する（簡易的な対処コードを適用）
+		aabb1.min.x = (std::min)(aabb1.min.x, aabb1.max.x);
+		aabb1.max.x = (std::max)(aabb1.min.x, aabb1.max.x);
+		aabb1.min.y = (std::min)(aabb1.min.y, aabb1.max.y);
+		aabb1.max.y = (std::max)(aabb1.min.y, aabb1.max.y);
+		aabb1.min.z = (std::min)(aabb1.min.z, aabb1.max.z);
+		aabb1.max.z = (std::max)(aabb1.min.z, aabb1.max.z);
+
+		aabb2.min.x = (std::min)(aabb2.min.x, aabb2.max.x);
+		aabb2.max.x = (std::max)(aabb2.min.x, aabb2.max.x);
+		aabb2.min.y = (std::min)(aabb2.min.y, aabb2.max.y);
+		aabb2.max.y = (std::max)(aabb2.min.y, aabb2.max.y);
+		aabb2.min.z = (std::min)(aabb2.min.z, aabb2.max.z);
+		aabb2.max.z = (std::max)(aabb2.min.z, aabb2.max.z);
 
 		ImGui::End();
 
@@ -699,28 +751,18 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 		DrawGrid(viewProjectionMatrix, viewportMatrix);
 
-		// 三角形と線を表示し、衝突していたら線を赤く表示する。衝突していなければ白。
+		// AABBを2つ表示し、衝突していたらどちらかを赤く表示する。衝突していなければ白。
 		uint32_t color = 0xFFFFFFFF; // 初期値は白色
 
-		// 三角形と線分の衝突判定
-		if (IsCollision(triangle, segment))
+		// AABBとAABBの衝突判定関数を作成する
+		if (IsCollision(aabb1, aabb2))
 		{
-			color = 0xFF0000FF; // 赤色
+			color = 0xFF0000FF; // 衝突時は赤色
 		}
 
-		// 三角形を描画
-		DrawTriangle(triangle, viewProjectionMatrix, viewportMatrix, color);
-
-		// 線分（Segment）を画面に描画して視覚化する
-		Vector3 startNdc = Transform(segment.origin, viewProjectionMatrix);
-		Vector3 startScreen = Transform(startNdc, viewportMatrix);
-
-		Vector3 endPos = Add(segment.origin, segment.diff);
-		Vector3 endNdc = Transform(endPos, viewProjectionMatrix);
-		Vector3 endScreen = Transform(endNdc, viewportMatrix);
-
-		// 線分を描画（判定結果の色を適用）
-		Novice::DrawLine(int(startScreen.x), int(startScreen.y), int(endScreen.x), int(endScreen.y), color);
+		// AABBの描画関数を呼び出す
+		DrawAABB(aabb1, viewProjectionMatrix, viewportMatrix, color);
+		DrawAABB(aabb2, viewProjectionMatrix, viewportMatrix, 0xFFFFFFFF); // 片方は常に白
 
 		///
 		/// ↑描画処理ここまで
