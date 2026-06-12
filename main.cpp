@@ -430,7 +430,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		ImGui::Text("OBB");
 		ImGui::DragFloat3("OBB Center", &obb.center.x, 0.01f);
 		ImGui::DragFloat3("OBB Size", &obb.size.x, 0.01f);
-		// 【要望対応】ImGuiで角度を変更できるようにコントロールを追加
+		// ImGuiで角度を変更できるようにコントロールを追加
 		ImGui::DragFloat3("OBB Rotate (Rad)", &obbRotate.x, 0.01f);
 
 		ImGui::Separator();
