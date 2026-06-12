@@ -26,39 +26,24 @@ struct Sphere
 	float radius;
 };
 
-struct Line
-{
-	Vector3 origin;
-	Vector3 diff;
-};
-
-struct Ray
-{
-	Vector3 origin;
-	Vector3 diff;
-};
-
 struct Segment
 {
 	Vector3 origin;
 	Vector3 diff;
 };
 
-struct Plane
-{
-	Vector3 normal;
-	float distance;
-};
-
-struct Triangle
-{
-	Vector3 vertices[3];
-};
-
 struct AABB
 {
 	Vector3 min;
 	Vector3 max;
+};
+
+// 【新規追加】OBBの構造体定義
+struct OBB
+{
+	Vector3 center;          // 中心点
+	Vector3 orientations[3]; // 座標軸（方向単位ベクトル）[0]:X軸, [1]:Y軸, [2]:Z軸
+	Vector3 size;            // 各軸の半分の長さ（拡縮）
 };
 
 // ベクトルの足し算
@@ -73,37 +58,22 @@ Vector3 Subtract(const Vector3& v1, const Vector3& v2)
 	return Vector3{ v1.x - v2.x, v1.y - v2.y, v1.z - v2.z };
 }
 
-Vector3 Project(const Vector3& v1, const Vector3& v2)
+// ベクトルのスカラー倍
+Vector3 Multiply(float scalar, const Vector3& v)
 {
-	float sqrMagV2 = v2.x * v2.x + v2.y * v2.y + v2.z * v2.z;
-	if (sqrMagV2 < 1e-6f)
-	{
-		return Vector3{ 0.0f, 0.0f, 0.0f };
-	}
-	float dot = v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
-	float t = dot / sqrMagV2;
-	return Vector3{ v2.x * t, v2.y * t, v2.z * t };
+	return Vector3{ scalar * v.x, scalar * v.y, scalar * v.z };
 }
 
-float Clamp(float value, float min, float max) {
-	if (value < min) { return min; }
-	if (value > max) { return max; }
-	return value;
+// 内積
+float Dot(const Vector3& v1, const Vector3& v2)
+{
+	return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
 }
 
-Vector3 ClosestPoint(const Vector3& point, const Segment& segment)
+// ベクトルの長さを計算
+float Length(const Vector3& v)
 {
-	Vector3 ab = segment.diff;
-	Vector3 ap = Subtract(point, segment.origin);
-	float sqrMagAB = ab.x * ab.x + ab.y * ab.y + ab.z * ab.z;
-	if (sqrMagAB < 1e-6f)
-	{
-		return segment.origin;
-	}
-	float dot = ap.x * ab.x + ap.y * ab.y + ap.z * ab.z;
-	float t = dot / sqrMagAB;
-	t = Clamp(t, 0.0f, 1.0f);
-	return Add(segment.origin, Vector3{ ab.x * t, ab.y * t, ab.z * t });
+	return std::sqrtf(v.x * v.x + v.y * v.y + v.z * v.z);
 }
 
 Matrix4x4 Inverse(const Matrix4x4& m)
@@ -222,7 +192,6 @@ Matrix4x4 MakeTranslationMatrix(const Vector3& translation) {
 }
 
 Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Vector3& rotate, const Vector3& translation) {
-	Matrix4x4 result;
 	Matrix4x4 scaleMatrix = { {
 		{scale.x, 0.0f, 0.0f, 0.0f},
 		{0.0f, scale.y, 0.0f, 0.0f},
@@ -234,8 +203,7 @@ Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Vector3& rotate, const Ve
 	Matrix4x4 rotationZMatrix = rotationZ(rotate.z);
 	Matrix4x4 rotationMatrix = Multiply(rotationXMatrix, Multiply(rotationYMatrix, rotationZMatrix));
 	Matrix4x4 translationMatrix = MakeTranslationMatrix(translation);
-	result = Multiply(scaleMatrix, Multiply(rotationMatrix, translationMatrix));
-	return result;
+	return Multiply(scaleMatrix, Multiply(rotationMatrix, translationMatrix));
 }
 
 Matrix4x4 MakePerspectiveFovMatrix(float fovY, float aspect, float nearClip, float farClip) {
@@ -261,102 +229,66 @@ Matrix4x4 MakeViewportMatrix(float left, float top, float width, float height, f
 	return result;
 }
 
-// ベクトルの長さを計算
-float Length(const Vector3& v)
+// 【新規追加】OBBと球の衝突判定関数
+bool IsCollision(const OBB& obb, const Sphere& sphere)
 {
-	return std::sqrtf(v.x * v.x + v.y * v.y + v.z * v.z);
-}
+	// OBBの中心から球の中心へのベクトル
+	Vector3 centerInOBBLocal = Subtract(sphere.center, obb.center);
 
-// AABBと球の衝突判定関数
-bool IsCollision(const AABB& aabb, const Sphere& sphere)
-{
-	Vector3 closestPoint{
-		std::clamp(sphere.center.x, aabb.min.x, aabb.max.x),
-		std::clamp(sphere.center.y, aabb.min.y, aabb.max.y),
-		std::clamp(sphere.center.z, aabb.min.z, aabb.max.z)
+	// OBBの各局所軸に投影して、ローカル空間上での座標を取り出す
+	Vector3 closestPointInLocal{
+		Dot(centerInOBBLocal, obb.orientations[0]),
+		Dot(centerInOBBLocal, obb.orientations[1]),
+		Dot(centerInOBBLocal, obb.orientations[2])
 	};
 
-	float distance = Length(Subtract(closestPoint, sphere.center));
+	// ローカル空間上でAABBと同じように[-size, size]の範囲にクランプする
+	closestPointInLocal.x = std::clamp(closestPointInLocal.x, -obb.size.x, obb.size.x);
+	closestPointInLocal.y = std::clamp(closestPointInLocal.y, -obb.size.y, obb.size.y);
+	closestPointInLocal.z = std::clamp(closestPointInLocal.z, -obb.size.z, obb.size.z);
 
-	if (distance <= sphere.radius)
-	{
-		return true;
-	}
+	// クランプしたローカル座標を、もう一度ワールド空間の座標系に戻す
+	Vector3 closestPointWorld = obb.center;
+	closestPointWorld = Add(closestPointWorld, Multiply(closestPointInLocal.x, obb.orientations[0]));
+	closestPointWorld = Add(closestPointWorld, Multiply(closestPointInLocal.y, obb.orientations[1]));
+	closestPointWorld = Add(closestPointWorld, Multiply(closestPointInLocal.z, obb.orientations[2]));
 
-	return false;
+	// ワールド空間での最近接点と球の中心との距離を測定
+	float distance = Length(Subtract(closestPointWorld, sphere.center));
+
+	// 半径以下なら衝突
+	return distance <= sphere.radius;
 }
 
-// 【新規追加】AABBと線分（Segment）の衝突判定関数
-bool IsCollision(const AABB& aabb, const Segment& segment)
+// 【新規追加】OBBの描画関数
+void DrawOBB(const OBB& obb, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color)
 {
-	// 各軸において交差するtの範囲を求める
-	float tNearX = (aabb.min.x - segment.origin.x) / segment.diff.x;
-	float tFarX = (aabb.max.x - segment.origin.x) / segment.diff.x;
-	float tNearY = (aabb.min.y - segment.origin.y) / segment.diff.y;
-	float tFarY = (aabb.max.y - segment.origin.y) / segment.diff.y;
-	float tNearZ = (aabb.min.z - segment.origin.z) / segment.diff.z;
-	float tFarZ = (aabb.max.z - segment.origin.z) / segment.diff.z;
-
-	// 0除算（平行な場合）のNaN対応・処理のパッチ
-	if (std::isnan(tNearX) || std::isnan(tFarX)) {
-		if (segment.origin.x < aabb.min.x || segment.origin.x > aabb.max.x) return false;
-		tNearX = -std::numeric_limits<float>::infinity();
-		tFarX = std::numeric_limits<float>::infinity();
-	}
-	if (std::isnan(tNearY) || std::isnan(tFarY)) {
-		if (segment.origin.y < aabb.min.y || segment.origin.y > aabb.max.y) return false;
-		tNearY = -std::numeric_limits<float>::infinity();
-		tFarY = std::numeric_limits<float>::infinity();
-	}
-	if (std::isnan(tNearZ) || std::isnan(tFarZ)) {
-		if (segment.origin.z < aabb.min.z || segment.origin.z > aabb.max.z) return false;
-		tNearZ = -std::numeric_limits<float>::infinity();
-		tFarZ = std::numeric_limits<float>::infinity();
-	}
-
-	// 近い方と遠い方の順序を正しく並び替える
-	if (tNearX > tFarX) std::swap(tNearX, tFarX);
-	if (tNearY > tFarY) std::swap(tNearY, tFarY);
-	if (tNearZ > tFarZ) std::swap(tNearZ, tFarZ);
-
-	// AABBとの衝突点（貫通点）のtが小さい方（最大値を取る）
-	float tmin = (std::max)((std::max)(tNearX, tNearY), tNearZ);
-	// AABBとの衝突点（貫通点）のtが大きい方（最小値を取る）
-	float tmax = (std::min)((std::min)(tFarX, tFarY), tFarZ);
-
-	// トラックが重なっており、かつ線分の範囲(0.0f 〜 1.0f)に交差が収まっている場合衝突
-	if (tmin <= tmax)
-	{
-		if (tmin <= 1.0f && tmax >= 0.0f)
-		{
-			return true;
-		}
-	}
-
-	return false;
-}
-
-// AABBの描画関数
-void DrawAABB(const AABB& aabb, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color)
-{
-	Vector3 vertices[8] = {
-		{ aabb.min.x, aabb.min.y, aabb.min.z },
-		{ aabb.max.x, aabb.min.y, aabb.min.z },
-		{ aabb.min.x, aabb.max.y, aabb.min.z },
-		{ aabb.max.x, aabb.max.y, aabb.min.z },
-		{ aabb.min.x, aabb.min.y, aabb.max.z },
-		{ aabb.max.x, aabb.min.y, aabb.max.z },
-		{ aabb.min.x, aabb.max.y, aabb.max.z },
-		{ aabb.max.x, aabb.max.y, aabb.max.z }
+	// ローカル空間での8頂点
+	Vector3 localVertices[8] = {
+		{ -obb.size.x, -obb.size.y, -obb.size.z },
+		{  obb.size.x, -obb.size.y, -obb.size.z },
+		{ -obb.size.x,  obb.size.y, -obb.size.z },
+		{  obb.size.x,  obb.size.y, -obb.size.z },
+		{ -obb.size.x, -obb.size.y,  obb.size.z },
+		{  obb.size.x, -obb.size.y,  obb.size.z },
+		{ -obb.size.x,  obb.size.y,  obb.size.z },
+		{  obb.size.x,  obb.size.y,  obb.size.z }
 	};
 
 	Vector3 screenVertices[8];
 	for (int i = 0; i < 8; ++i)
 	{
-		Vector3 ndc = Transform(vertices[i], viewProjectionMatrix);
+		// ローカルからワールド空間へ変換
+		Vector3 worldPos = obb.center;
+		worldPos = Add(worldPos, Multiply(localVertices[i].x, obb.orientations[0]));
+		worldPos = Add(worldPos, Multiply(localVertices[i].y, obb.orientations[1]));
+		worldPos = Add(worldPos, Multiply(localVertices[i].z, obb.orientations[2]));
+
+		Vector3 ndc = Transform(worldPos, viewProjectionMatrix);
 		screenVertices[i] = Transform(ndc, viewportMatrix);
 	}
 
+	// 各辺をつなぐ
 	Novice::DrawLine(int(screenVertices[0].x), int(screenVertices[0].y), int(screenVertices[1].x), int(screenVertices[1].y), color);
 	Novice::DrawLine(int(screenVertices[1].x), int(screenVertices[1].y), int(screenVertices[3].x), int(screenVertices[3].y), color);
 	Novice::DrawLine(int(screenVertices[3].x), int(screenVertices[3].y), int(screenVertices[2].x), int(screenVertices[2].y), color);
@@ -371,18 +303,6 @@ void DrawAABB(const AABB& aabb, const Matrix4x4& viewProjectionMatrix, const Mat
 	Novice::DrawLine(int(screenVertices[1].x), int(screenVertices[1].y), int(screenVertices[5].x), int(screenVertices[5].y), color);
 	Novice::DrawLine(int(screenVertices[2].x), int(screenVertices[2].y), int(screenVertices[6].x), int(screenVertices[6].y), color);
 	Novice::DrawLine(int(screenVertices[3].x), int(screenVertices[3].y), int(screenVertices[7].x), int(screenVertices[7].y), color);
-}
-
-// 【新規追加】線分（Segment）の描画関数
-void DrawSegment(const Segment& segment, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color)
-{
-	Vector3 startPos = segment.origin;
-	Vector3 endPos = Add(segment.origin, segment.diff);
-
-	Vector3 startScreen = Transform(Transform(startPos, viewProjectionMatrix), viewportMatrix);
-	Vector3 endScreen = Transform(Transform(endPos, viewProjectionMatrix), viewportMatrix);
-
-	Novice::DrawLine(int(startScreen.x), int(startScreen.y), int(endScreen.x), int(endScreen.y), color);
 }
 
 void DrawGrid(const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix) {
@@ -459,21 +379,24 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	char keys[256] = { 0 };
 	char preKeys[256] = { 0 };
 
-	// 変数の初期化
+	// カメラ変数の初期化
 	Vector3 cameraTranslate = { 0.0f, 2.5f, -10.0f };
 	Vector3 cameraRotate = { 0.26f, 0.0f, 0.0f };
 
-	// AABBの設定
-	AABB aabb{
-		{-0.5f, -0.5f, -0.5f},
-		{ 0.5f,  0.5f,  0.5f}
-	};
+	// 球の初期設定
+	Sphere sphere = { {0.0f, 0.0f, 2.0f}, 0.5f };
 
-	// 線分（Segment）の設定（スライドの初期値）
-	Segment segment{
-		{-0.7f, 0.3f, 0.0f},
-		{2.0f, -0.5f, 0.0f}
-	};
+	// OBBの初期設定
+	OBB obb;
+	obb.center = { 0.0f, 0.0f, 0.0f };
+	obb.size = { 0.5f, 0.5f, 0.5f };
+	// 方向ベクトルの初期値（単位行列と同じ状態）
+	obb.orientations[0] = { 1.0f, 0.0f, 0.0f };
+	obb.orientations[1] = { 0.0f, 1.0f, 0.0f };
+	obb.orientations[2] = { 0.0f, 0.0f, 1.0f };
+
+	// ImGui用のOBB回転角度（オイラー角）
+	Vector3 obbRotate = { 0.0f, 0.0f, 0.0f };
 
 	while (Novice::ProcessMessage() == 0) {
 		Novice::BeginFrame();
@@ -502,25 +425,26 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		ImGui::DragFloat3("CameraTranslate", &cameraTranslate.x, 0.01f);
 		ImGui::DragFloat3("CameraRotate", &cameraRotate.x, 0.01f);
 
-		// ImGuiで各パラメータを変更可能にする
+		// ImGuiでOBBと球のパラメータを変更できるようにする
 		ImGui::Separator();
-		ImGui::Text("AABB");
-		ImGui::DragFloat3("AABB Min", &aabb.min.x, 0.01f);
-		ImGui::DragFloat3("AABB Max", &aabb.max.x, 0.01f);
+		ImGui::Text("OBB");
+		ImGui::DragFloat3("OBB Center", &obb.center.x, 0.01f);
+		ImGui::DragFloat3("OBB Size", &obb.size.x, 0.01f);
+		// 【要望対応】ImGuiで角度を変更できるようにコントロールを追加
+		ImGui::DragFloat3("OBB Rotate (Rad)", &obbRotate.x, 0.01f);
 
-		ImGui::Text("Segment");
-		ImGui::DragFloat3("Segment Origin", &segment.origin.x, 0.01f);
-		ImGui::DragFloat3("Segment Diff", &segment.diff.x, 0.01f);
-
-		// minとmaxが入れ替わらないように防ぐ処理
-		aabb.min.x = (std::min)(aabb.min.x, aabb.max.x);
-		aabb.max.x = (std::max)(aabb.min.x, aabb.max.x);
-		aabb.min.y = (std::min)(aabb.min.y, aabb.max.y);
-		aabb.max.y = (std::max)(aabb.min.y, aabb.max.y);
-		aabb.min.z = (std::min)(aabb.min.z, aabb.max.z);
-		aabb.max.z = (std::max)(aabb.min.z, aabb.max.z);
+		ImGui::Separator();
+		ImGui::Text("Sphere");
+		ImGui::DragFloat3("Sphere Center", &sphere.center.x, 0.01f);
+		ImGui::DragFloat("Sphere Radius", &sphere.radius, 0.01f);
 
 		ImGui::End();
+
+		// 入力された角度情報（obbRotate）から回転行列を作成し、OBBの方向ベクトル（軸）を更新する
+		Matrix4x4 obbRotMat = Multiply(rotationX(obbRotate.x), Multiply(rotationY(obbRotate.y), rotationZ(obbRotate.z)));
+		obb.orientations[0] = { obbRotMat.m[0][0], obbRotMat.m[0][1], obbRotMat.m[0][2] }; // X軸の向き
+		obb.orientations[1] = { obbRotMat.m[1][0], obbRotMat.m[1][1], obbRotMat.m[1][2] }; // Y軸の向き
+		obb.orientations[2] = { obbRotMat.m[2][0], obbRotMat.m[2][1], obbRotMat.m[2][2] }; // Z軸の向き
 
 		Matrix4x4 cameraMatrix = MakeAffineMatrix({ 1.0f, 1.0f, 1.0f }, cameraRotate, cameraTranslate);
 		Matrix4x4 viewMatrix = Inverse(cameraMatrix);
@@ -538,16 +462,16 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 		DrawGrid(viewProjectionMatrix, viewportMatrix);
 
-		// 線分との衝突判定
-		uint32_t aabbColor = 0xFFFFFFFF;
-		uint32_t segmentColor = 0xFFFFFFFF;
-		if (IsCollision(aabb, segment))
+		// 衝突状態によって色を変える処理
+		uint32_t color = 0xFFFFFFFF; // 通常時は白色
+		if (IsCollision(obb, sphere))
 		{
-			aabbColor = 0xFF0000FF;    // 衝突時は四角形を赤に
+			color = 0xFF0000FF; // 衝突時は赤色
 		}
 
-		DrawAABB(aabb, viewProjectionMatrix, viewportMatrix, aabbColor);
-		DrawSegment(segment, viewProjectionMatrix, viewportMatrix, segmentColor);
+		// OBBと球を描画する
+		DrawOBB(obb, viewProjectionMatrix, viewportMatrix, color);
+		DrawSphere(sphere, viewProjectionMatrix, viewportMatrix, 0xFFFFFFFF);
 
 		///
 		/// ↑描画処理ここまで
