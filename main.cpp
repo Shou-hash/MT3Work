@@ -49,7 +49,6 @@ struct Plane
 	float distance;
 };
 
-// ★追加
 struct Triangle
 {
 	Vector3 vertices[3];
@@ -88,8 +87,8 @@ Vector3 Project(const Vector3& v1, const Vector3& v2)
 
 // クランプ用のヘルパー関数（標準関数の代わり、または std::clamp でも可）
 float Clamp(float value, float min, float max) {
-	if (value < min) return min;
-	if (value > max) return max;
+	if (value < min) { return min; }
+	if (value > max) { return max; }
 	return value;
 }
 
@@ -137,7 +136,7 @@ Matrix4x4 Inverse(const Matrix4x4& m)
 	// ガウス・ジョルダンの消去法（掃き出し法）
 	for (int i = 0; i < 4; ++i) {
 		float pivot = a[i][i];
-		if (pivot == 0.0f) continue; // ゼロ除算回避（本来は行の入れ替えが必要ですが簡易化）
+		if (pivot == 0.0f) { continue; } // ゼロ除算回避（本来は行の入れ替えが必要ですが簡易化）
 
 		// ピボット行をピボットで割る
 		for (int j = 0; j < 8; ++j) {
