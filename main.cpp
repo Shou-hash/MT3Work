@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <numbers>
 #include <imgui.h>
-#include <algorithm> // std::min, std::max 用
+#include <algorithm> // std::min, std::max, std::clamp 用
 #define _USE_MATH_DEFINES
 
 const char kWindowTitle[] = "LC1C_12_ショウ_ズーウェン";
@@ -75,24 +75,16 @@ Vector3 Subtract(const Vector3& v1, const Vector3& v2)
 
 Vector3 Project(const Vector3& v1, const Vector3& v2)
 {
-	// v2の長さの二乗（ドット積）
 	float sqrMagV2 = v2.x * v2.x + v2.y * v2.y + v2.z * v2.z;
-
-	// ゼロ除算の防止（v2がゼロベクトルの場合はゼロベクトルを返す）
 	if (sqrMagV2 < 1e-6f)
 	{
 		return Vector3{ 0.0f, 0.0f, 0.0f };
 	}
-
-	// v1 と v2 の内積
 	float dot = v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
-
-	// 射影倍率を計算して v2 に掛ける
 	float t = dot / sqrMagV2;
 	return Vector3{ v2.x * t, v2.y * t, v2.z * t };
 }
 
-// クランプ用のヘルパー関数（標準関数の代わり、または std::clamp でも可）
 float Clamp(float value, float min, float max) {
 	if (value < min) { return min; }
 	if (value > max) { return max; }
@@ -101,29 +93,16 @@ float Clamp(float value, float min, float max) {
 
 Vector3 ClosestPoint(const Vector3& point, const Segment& segment)
 {
-	// segment.diff は「始点から終点へのベクトル(AB)」そのもの
 	Vector3 ab = segment.diff;
-
-	// 始点から対象の点へのベクトル(AP)
 	Vector3 ap = Subtract(point, segment.origin);
-
-	// ABの長さの二乗
 	float sqrMagAB = ab.x * ab.x + ab.y * ab.y + ab.z * ab.z;
-
-	// 始点と終点が同じ（点）ベクトルの場合は、始点を返す
 	if (sqrMagAB < 1e-6f)
 	{
 		return segment.origin;
 	}
-
-	// 内積 (AP ・ AB)
 	float dot = ap.x * ab.x + ap.y * ab.y + ap.z * ab.z;
-
-	// 投影比率 t を計算し、0.0 〜 1.0 の間にクランプ
 	float t = dot / sqrMagAB;
 	t = Clamp(t, 0.0f, 1.0f);
-
-	// 最近傍点を計算 (A + t * AB)
 	return Add(segment.origin, Vector3{ ab.x * t, ab.y * t, ab.z * t });
 }
 
@@ -131,26 +110,18 @@ Matrix4x4 Inverse(const Matrix4x4& m)
 {
 	Matrix4x4 result = {};
 	float a[4][8] = { 0 };
-
-	// 拡大係数行列の作成（左側に元の行列、右側に単位行列）
 	for (int i = 0; i < 4; ++i) {
 		for (int j = 0; j < 4; ++j) {
 			a[i][j] = m.m[i][j];
 		}
 		a[i][4 + i] = 1.0f;
 	}
-
-	// ガウス・ジョルダンの消去法（掃き出し法）
 	for (int i = 0; i < 4; ++i) {
 		float pivot = a[i][i];
-		if (pivot == 0.0f) { continue; }// ゼロ除算回避（本来は行の入れ替えが必要ですが簡易化）
-
-		// ピボット行をピボットで割る
+		if (pivot == 0.0f) { continue; }
 		for (int j = 0; j < 8; ++j) {
 			a[i][j] /= pivot;
 		}
-
-		// ピボット列の他の行を0にする
 		for (int k = 0; k < 4; ++k) {
 			if (i != k) {
 				float factor = a[k][i];
@@ -160,28 +131,21 @@ Matrix4x4 Inverse(const Matrix4x4& m)
 			}
 		}
 	}
-
-	// 右側の単位行列だった部分が逆行列になる
 	for (int i = 0; i < 4; ++i) {
 		for (int j = 0; j < 4; ++j) {
 			result.m[i][j] = a[i][4 + j];
 		}
 	}
-
 	return result;
 }
 
 Vector3 Transform(const Vector3& vector, const Matrix4x4& matrix)
 {
 	Vector3 result;
-
-	// 平行移動（m[3][*]）を足し合わせ、最後にwで割る
 	result.x = (vector.x * matrix.m[0][0] + vector.y * matrix.m[1][0] + vector.z * matrix.m[2][0] + 1.0f * matrix.m[3][0]);
 	result.y = (vector.x * matrix.m[0][1] + vector.y * matrix.m[1][1] + vector.z * matrix.m[2][1] + 1.0f * matrix.m[3][1]);
 	result.z = (vector.x * matrix.m[0][2] + vector.y * matrix.m[1][2] + vector.z * matrix.m[2][2] + 1.0f * matrix.m[3][2]);
-	// w成分の計算（透視投影の除算に必要）
 	float w = vector.x * matrix.m[0][3] + vector.y * matrix.m[1][3] + vector.z * matrix.m[2][3] + 1.0f * matrix.m[3][3];
-
 	if (w != 0.0f)
 	{
 		result.x /= w;
@@ -259,26 +223,21 @@ Matrix4x4 MakeTranslationMatrix(const Vector3& translation) {
 
 Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Vector3& rotate, const Vector3& translation) {
 	Matrix4x4 result;
-	// スケーリング行列の作成
 	Matrix4x4 scaleMatrix = { {
 		{scale.x, 0.0f, 0.0f, 0.0f},
 		{0.0f, scale.y, 0.0f, 0.0f},
 		{0.0f, 0.0f, scale.z, 0.0f},
 		{0.0f, 0.0f, 0.0f, 1.0f}
 		} };
-	// 回転行列の作成
 	Matrix4x4 rotationXMatrix = rotationX(rotate.x);
 	Matrix4x4 rotationYMatrix = rotationY(rotate.y);
 	Matrix4x4 rotationZMatrix = rotationZ(rotate.z);
 	Matrix4x4 rotationMatrix = Multiply(rotationXMatrix, Multiply(rotationYMatrix, rotationZMatrix));
-	// 平行移動行列の作成
 	Matrix4x4 translationMatrix = MakeTranslationMatrix(translation);
-	// アフィン変換行列の計算
 	result = Multiply(scaleMatrix, Multiply(rotationMatrix, translationMatrix));
 	return result;
 }
 
-// 透視投影行列の作成
 Matrix4x4 MakePerspectiveFovMatrix(float fovY, float aspect, float nearClip, float farClip) {
 	Matrix4x4 result = {};
 	float f = 1.0f / tanf(fovY / 2.0f);
@@ -290,24 +249,10 @@ Matrix4x4 MakePerspectiveFovMatrix(float fovY, float aspect, float nearClip, flo
 	return result;
 }
 
-// 正射影行列の作成
-Matrix4x4 MakeOrthographicMatrix(float left, float right, float top, float bottom, float nearClip, float farClip) {
-	Matrix4x4 result = {};
-	result.m[0][0] = 2.0f / (right - left);
-	result.m[1][1] = 2.0f / (top - bottom);
-	result.m[2][2] = 1.0f / (farClip - nearClip);
-	result.m[3][0] = -(right + left) / (right - left);
-	result.m[3][1] = -(top + bottom) / (top - bottom);
-	result.m[3][2] = -nearClip / (farClip - nearClip);
-	result.m[3][3] = 1.0f;
-	return result;
-}
-
-// ビューポート変換行列の作成
 Matrix4x4 MakeViewportMatrix(float left, float top, float width, float height, float minDepth, float maxDepth) {
 	Matrix4x4 result = {};
 	result.m[0][0] = width / 2.0f;
-	result.m[1][1] = -height / 2.0f; // Y軸を反転
+	result.m[1][1] = -height / 2.0f;
 	result.m[2][2] = maxDepth - minDepth;
 	result.m[3][0] = left + width / 2.0f;
 	result.m[3][1] = top + height / 2.0f;
@@ -316,126 +261,46 @@ Matrix4x4 MakeViewportMatrix(float left, float top, float width, float height, f
 	return result;
 }
 
-bool IsCollision(const Segment& segment, const Plane& plane)
-{
-	// 1. 平面の法線ベクトルと線分の方向ベクトルの内積を計算（垂直かどうかの判定用）
-	float dot = plane.normal.x * segment.diff.x + plane.normal.y * segment.diff.y + plane.normal.z * segment.diff.z;
-
-	// ゼロ除算の防止（内積がほぼゼロ = 平面と線分が平行な場合は交差しない）
-	if (std::fabsf(dot) < 1e-6f)
-	{
-		return false;
-	}
-
-	// 2. 平面の方程式から交点までのパラメータ t を計算
-	// t = (distance - (origin ・ normal)) / (diff ・ normal)
-	float dotOrigin = segment.origin.x * plane.normal.x + segment.origin.y * plane.normal.y + segment.origin.z * plane.normal.z;
-	float t = (plane.distance - dotOrigin) / dot;
-
-	// 3. t が 0.0f 〜 1.0f の間であれば線分が平面と交差している
-	if (t >= 0.0f && t <= 1.0f)
-	{
-		return true;
-	}
-
-	return false;
-}
-
-Vector3 Perpendicular(const Vector3& vector)
-{
-	if (vector.x != 0.0f || vector.y != 0.0f)
-	{
-		return { -vector.y , vector.x ,0.0f };
-	}
-	return { 0.0f,-vector.z,vector.y };
-}
-
-// ベクトルの実数倍（スライド内のMultiply用）
-Vector3 PlaneMultiply(float scalar, const Vector3& v)
-{
-	return Vector3{ scalar * v.x, scalar * v.y, scalar * v.z };
-}
-
 // ベクトルの長さを計算
 float Length(const Vector3& v)
 {
 	return std::sqrtf(v.x * v.x + v.y * v.y + v.z * v.z);
 }
 
-// ベクトルの正規化（長さを1にする）
-Vector3 Normalize(const Vector3& v)
+// 【新規追加】AABBと球の衝突判定関数
+bool IsCollision(const AABB& aabb, const Sphere& sphere)
 {
-	float len = Length(v);
-	if (len < 1e-6f)
-	{
-		return Vector3{ 0.0f, 0.0f, 0.0f };
-	}
-	return Vector3{ v.x / len, v.y / len, v.z / len };
-}
-
-// クロス積（外積）の計算
-Vector3 Cross(const Vector3& v1, const Vector3& v2)
-{
-	return Vector3{
-		v1.y * v2.z - v1.z * v2.y,
-		v1.z * v2.x - v1.x * v2.z,
-		v1.x * v2.y - v1.y * v2.x
+	// 球の中心座標をAABBの[min, max]内にclampして最近接点を求める
+	Vector3 closestPoint{
+		std::clamp(sphere.center.x, aabb.min.x, aabb.max.x),
+		std::clamp(sphere.center.y, aabb.min.y, aabb.max.y),
+		std::clamp(sphere.center.z, aabb.min.z, aabb.max.z)
 	};
-}
 
-// ドット積（内積）の計算
-float Dot(const Vector3& v1, const Vector3& v2)
-{
-	return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
-}
+	// 最近接点と球の中心との距離を求める
+	float distance = Length(Subtract(closestPoint, sphere.center));
 
-// AABBとAABBの衝突判定関数（スライドの疑似コード仕様に修正）
-bool IsCollision(const AABB& a, const AABB& b)
-{
-	if ((a.min.x <= b.max.x && a.max.x >= b.min.x) && // x軸
-		(a.min.y <= b.max.y && a.max.y >= b.min.y) && // y軸
-		(a.min.z <= b.max.z && a.max.z >= b.min.z))   // z軸
+	// 距離が半径よりも小さければ衝突
+	if (distance <= sphere.radius)
 	{
-		// 衝突
 		return true;
 	}
 
 	return false;
 }
 
-// 三角形を描画するDrawTriangle関数
-void DrawTriangle(
-	const Triangle& triangle, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color)
-{
-	Vector3 screenVertices[3];
-	for (int i = 0; i < 3; ++i)
-	{
-		// 三角形の各頂点をスクリーン座標系まで変換してNovice::DrawTriangleを利用する
-		Vector3 ndc = Transform(triangle.vertices[i], viewProjectionMatrix);
-		screenVertices[i] = Transform(ndc, viewportMatrix);
-	}
-
-	Novice::DrawTriangle(
-		int(screenVertices[0].x), int(screenVertices[0].y),
-		int(screenVertices[1].x), int(screenVertices[1].y),
-		int(screenVertices[2].x), int(screenVertices[2].y),
-		color, kFillModeWireFrame
-	);
-}
-
 // AABBの描画関数
 void DrawAABB(const AABB& aabb, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color)
 {
-	// 1. AABBを構成する8頂点をmin/maxを使って求める
 	Vector3 vertices[8] = {
-		{ aabb.min.x, aabb.min.y, aabb.min.z }, // 0
-		{ aabb.max.x, aabb.min.y, aabb.min.z }, // 1
-		{ aabb.min.x, aabb.max.y, aabb.min.z }, // 2
-		{ aabb.max.x, aabb.max.y, aabb.min.z }, // 3
-		{ aabb.min.x, aabb.min.y, aabb.max.z }, // 4
-		{ aabb.max.x, aabb.min.y, aabb.max.z }, // 5
-		{ aabb.min.x, aabb.max.y, aabb.max.z }, // 6
-		{ aabb.max.x, aabb.max.y, aabb.max.z }  // 7
+		{ aabb.min.x, aabb.min.y, aabb.min.z },
+		{ aabb.max.x, aabb.min.y, aabb.min.z },
+		{ aabb.min.x, aabb.max.y, aabb.min.z },
+		{ aabb.max.x, aabb.max.y, aabb.min.z },
+		{ aabb.min.x, aabb.min.y, aabb.max.z },
+		{ aabb.max.x, aabb.min.y, aabb.max.z },
+		{ aabb.min.x, aabb.max.y, aabb.max.z },
+		{ aabb.max.x, aabb.max.y, aabb.max.z }
 	};
 
 	Vector3 screenVertices[8];
@@ -445,60 +310,20 @@ void DrawAABB(const AABB& aabb, const Matrix4x4& viewProjectionMatrix, const Mat
 		screenVertices[i] = Transform(ndc, viewportMatrix);
 	}
 
-	// 2. 8頂点をそれぞれ結んで線を引く
-	// 手前の面 (Z min)
 	Novice::DrawLine(int(screenVertices[0].x), int(screenVertices[0].y), int(screenVertices[1].x), int(screenVertices[1].y), color);
 	Novice::DrawLine(int(screenVertices[1].x), int(screenVertices[1].y), int(screenVertices[3].x), int(screenVertices[3].y), color);
 	Novice::DrawLine(int(screenVertices[3].x), int(screenVertices[3].y), int(screenVertices[2].x), int(screenVertices[2].y), color);
 	Novice::DrawLine(int(screenVertices[2].x), int(screenVertices[2].y), int(screenVertices[0].x), int(screenVertices[0].y), color);
 
-	// 奥の面 (Z max)
 	Novice::DrawLine(int(screenVertices[4].x), int(screenVertices[4].y), int(screenVertices[5].x), int(screenVertices[5].y), color);
 	Novice::DrawLine(int(screenVertices[5].x), int(screenVertices[5].y), int(screenVertices[7].x), int(screenVertices[7].y), color);
 	Novice::DrawLine(int(screenVertices[7].x), int(screenVertices[7].y), int(screenVertices[6].x), int(screenVertices[6].y), color);
 	Novice::DrawLine(int(screenVertices[6].x), int(screenVertices[6].y), int(screenVertices[4].x), int(screenVertices[4].y), color);
 
-	// 手前と奥を繋ぐ辺
 	Novice::DrawLine(int(screenVertices[0].x), int(screenVertices[0].y), int(screenVertices[4].x), int(screenVertices[4].y), color);
 	Novice::DrawLine(int(screenVertices[1].x), int(screenVertices[1].y), int(screenVertices[5].x), int(screenVertices[5].y), color);
 	Novice::DrawLine(int(screenVertices[2].x), int(screenVertices[2].y), int(screenVertices[6].x), int(screenVertices[6].y), color);
 	Novice::DrawLine(int(screenVertices[3].x), int(screenVertices[3].y), int(screenVertices[7].x), int(screenVertices[7].y), color);
-}
-
-void DrawPlane(const Plane& plane, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color)
-{
-	// 1. 中心点を決める
-	Vector3 center = PlaneMultiply(plane.distance, plane.normal);
-	Vector3 perpendiculars[4];
-
-	// 2. 法線と垂直なベクトルを1つ求め、正規化する
-	perpendiculars[0] = Normalize(Perpendicular(plane.normal));
-
-	// 3. 2の逆ベクトルを求める
-	perpendiculars[1] = Vector3{ -perpendiculars[0].x, -perpendiculars[0].y, -perpendiculars[0].z };
-
-	// 4. 2と法線とのクロス積を求める
-	perpendiculars[2] = Cross(plane.normal, perpendiculars[0]);
-
-	// 5. 4の逆ベクトルを求める
-	perpendiculars[3] = Vector3{ -perpendiculars[2].x, -perpendiculars[2].y, -perpendiculars[2].z };
-
-	// 6. 2〜5のベクトルを中心点にそれぞれ定数倍（ここでは2.0f）して足すと4頂点が出来上がる
-	Vector3 points[4];
-	for (int32_t index = 0; index < 4; ++index)
-	{
-		Vector3 extend = PlaneMultiply(2.0f, perpendiculars[index]);
-		Vector3 point = Add(center, extend);
-
-		// 3D空間上の頂点をスクリーン座標に変換
-		points[index] = Transform(Transform(point, viewProjectionMatrix), viewportMatrix);
-	}
-
-	// 各頂点を結んでDrawLineで矩形を描画する（0->2->1->3->0 の順で結ぶと綺麗な矩形枠になります）
-	Novice::DrawLine(int(points[0].x), int(points[0].y), int(points[2].x), int(points[2].y), color);
-	Novice::DrawLine(int(points[2].x), int(points[2].y), int(points[1].x), int(points[1].y), color);
-	Novice::DrawLine(int(points[1].x), int(points[1].y), int(points[3].x), int(points[3].y), color);
-	Novice::DrawLine(int(points[3].x), int(points[3].y), int(points[0].x), int(points[0].y), color);
 }
 
 void DrawGrid(const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix) {
@@ -509,41 +334,21 @@ void DrawGrid(const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMa
 	for (uint32_t xIndex = 0; xIndex <= kSubdivisions; ++xIndex)
 	{
 		float x = -kGridHalfWidth + (xIndex * kGridEvery);
-
 		Vector3 startPos = { x, 0.0f, -kGridHalfWidth };
 		Vector3 endPos = { x, 0.0f, kGridHalfWidth };
-
-		Vector3 startNdc = Transform(startPos, viewProjectionMatrix);
-		Vector3 endNdc = Transform(endPos, viewProjectionMatrix);
-
-		Vector3 startScreen = Transform(startNdc, viewportMatrix);
-		Vector3 endScreen = Transform(endNdc, viewportMatrix);
-
-		Novice::DrawLine(
-			int(startScreen.x), int(startScreen.y),
-			int(endScreen.x), int(endScreen.y),
-			0xAAAAAAFF
-		);
+		Vector3 startScreen = Transform(Transform(startPos, viewProjectionMatrix), viewportMatrix);
+		Vector3 endScreen = Transform(Transform(endPos, viewProjectionMatrix), viewportMatrix);
+		Novice::DrawLine(int(startScreen.x), int(startScreen.y), int(endScreen.x), int(endScreen.y), 0xAAAAAAFF);
 	}
 
 	for (uint32_t zIndex = 0; zIndex <= kSubdivisions; ++zIndex)
 	{
 		float z = -kGridHalfWidth + (zIndex * kGridEvery);
-
 		Vector3 startPos = { -kGridHalfWidth, 0.0f, z };
 		Vector3 endPos = { kGridHalfWidth, 0.0f, z };
-
-		Vector3 startNdc = Transform(startPos, viewProjectionMatrix);
-		Vector3 endNdc = Transform(endPos, viewProjectionMatrix);
-
-		Vector3 startScreen = Transform(startNdc, viewportMatrix);
-		Vector3 endScreen = Transform(endNdc, viewportMatrix);
-
-		Novice::DrawLine(
-			int(startScreen.x), int(startScreen.y),
-			int(endScreen.x), int(endScreen.y),
-			0xAAAAAAFF
-		);
+		Vector3 startScreen = Transform(Transform(startPos, viewProjectionMatrix), viewportMatrix);
+		Vector3 endScreen = Transform(Transform(endPos, viewProjectionMatrix), viewportMatrix);
+		Novice::DrawLine(int(startScreen.x), int(startScreen.y), int(endScreen.x), int(endScreen.y), 0xAAAAAAFF);
 	}
 }
 
@@ -575,93 +380,42 @@ void DrawSphere(const Sphere& sphere, const Matrix4x4& viewProjectionMatrix, con
 			c.y = sphere.center.y + sphere.radius * sinf(lat + kLatEvery);
 			c.z = sphere.center.z + sphere.radius * cosf(lat + kLatEvery) * sinf(lon);
 
-			// ViewProjection行列でNDC座標に変換
-			Vector3 aNdc = Transform(a, viewProjectionMatrix);
-			Vector3 bNdc = Transform(b, viewProjectionMatrix);
-			Vector3 cNdc = Transform(c, viewProjectionMatrix);
+			Vector3 aScreen = Transform(Transform(a, viewProjectionMatrix), viewportMatrix);
+			Vector3 bScreen = Transform(Transform(b, viewProjectionMatrix), viewportMatrix);
+			Vector3 cScreen = Transform(Transform(c, viewProjectionMatrix), viewportMatrix);
 
-			// Viewport行列でスクリーン座標に変換
-			Vector3 aScreen = Transform(aNdc, viewportMatrix);
-			Vector3 bScreen = Transform(bNdc, viewportMatrix);
-			Vector3 cScreen = Transform(cNdc, viewportMatrix);
-
-			// 緯線（横方向）の描画
-			Novice::DrawLine(
-				int(aScreen.x), int(aScreen.y),
-				int(bScreen.x), int(bScreen.y),
-				color
-			);
-
-			// 経線（縦方向）の描画
-			Novice::DrawLine(
-				int(aScreen.x), int(aScreen.y),
-				int(cScreen.x), int(cScreen.y),
-				color
-			);
+			Novice::DrawLine(int(aScreen.x), int(aScreen.y), int(bScreen.x), int(bScreen.y), color);
+			Novice::DrawLine(int(aScreen.x), int(aScreen.y), int(cScreen.x), int(cScreen.y), color);
 		}
-	}
-}
-
-static const int kRowHeight = 20;
-
-void MatrixScreenPrintf(int x, int y, const Matrix4x4& matrix, const char* label)
-{
-	Novice::ScreenPrintf(x, y, "%s:", label);
-	for (int i = 0; i < 4; ++i) {
-		Novice::ScreenPrintf(x, y + (i + 1) * kRowHeight, "%.2f, %.2f, %.2f, %.2f",
-			matrix.m[i][0], matrix.m[i][1], matrix.m[i][2], matrix.m[i][3]);
 	}
 }
 
 // Windowsアプリでのエントリーポイント(main関数)
 int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
-	// ライブラリの初期化
 	const int kWindowWidth = 1280;
 	const int kWindowHeight = 720;
 	Novice::Initialize(kWindowTitle, kWindowWidth, kWindowHeight);
 
-	// キー入力結果を受け取る箱
 	char keys[256] = { 0 };
 	char preKeys[256] = { 0 };
 
-	// 変数の初期化（ループの外に出すことで毎フレーム初期化されるのを防ぐ）
+	// 変数の初期化
 	Vector3 cameraTranslate = { 0.0f, 2.5f, -10.0f };
 	Vector3 cameraRotate = { 0.26f, 0.0f, 0.0f };
-	Sphere sphere = { {0.0f, 0.0f, 0.0f}, 1.0f };
 
-	Plane plane = { {0.0f, 1.0f, 0.0f}, 0.0f };
+	// 球の初期設定
+	Sphere sphere = { {0.0f, 0.0f, 0.0f}, 0.5f };
 
-	Triangle triangle{ {
-		{ 0.0f,  1.0f, 0.0f },
-		{ 1.0f, -0.5f, 0.0f },
-		{-1.0f, -0.5f, 0.0f }
-	} };
-
-	Segment segment{ { 0.0f, 0.5f, -2.0f }, { 0.0f, 0.0f, 4.0f } };
-	Vector3 point{ -1.5f,0.6f,0.6f };
-
-	// AABBの実装例の初期値
-	AABB aabb1{
+	// AABBの初期設定（1つに変更）
+	AABB aabb{
 		{-0.5f, -0.5f, -0.5f},
-		{ 0.0f,  0.0f,  0.0f}
+		{ 0.5f,  0.5f,  0.5f}
 	};
 
-	AABB aabb2{
-		{0.2f, 0.2f, 0.2f},
-		{1.0f, 1.0f, 1.0f}
-	};
-
-	Vector3 project = Project(Subtract(point, segment.origin), segment.diff);
-
-	Vector3 closestPoint = ClosestPoint(point, segment);
-
-	// ウィンドウの×ボタンが押されるまでループ
 	while (Novice::ProcessMessage() == 0) {
-		// フレームの開始
 		Novice::BeginFrame();
 
-		// キー入力を受け取る
 		memcpy(preKeys, keys, 256);
 		Novice::GetHitKeyStateAll(keys);
 
@@ -669,76 +423,47 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		/// ↓更新処理ここから
 		///
 
-		// WASDによるカメラ位置（cameraTranslate）の変更処理
-		float cameraSpeed = 0.05f; // カメラの移動速度
-		if (keys[DIK_W]) {
-			cameraTranslate.z += cameraSpeed; // 前へ移動
-		}
-		if (keys[DIK_S]) {
-			cameraTranslate.z -= cameraSpeed; // 後ろへ移動
-		}
-		if (keys[DIK_A]) {
-			cameraTranslate.x -= cameraSpeed; // 左へ移動
-		}
-		if (keys[DIK_D]) {
-			cameraTranslate.x += cameraSpeed; // 右へ移動
-		}
+		float cameraSpeed = 0.05f;
+		if (keys[DIK_W]) { cameraTranslate.z += cameraSpeed; }
+		if (keys[DIK_S]) { cameraTranslate.z -= cameraSpeed; }
+		if (keys[DIK_A]) { cameraTranslate.x -= cameraSpeed; }
+		if (keys[DIK_D]) { cameraTranslate.x += cameraSpeed; }
 
-		// 矢印キーによるカメラ角度（cameraRotate）の変更処理
-		float rotateSpeed = 0.02f; // カメラの回転速度
-		if (keys[DIK_UP]) {
-			cameraRotate.x += rotateSpeed; // 上を向く
-		}
-		if (keys[DIK_DOWN]) {
-			cameraRotate.x -= rotateSpeed; // 下を向く
-		}
-		if (keys[DIK_LEFT]) {
-			cameraRotate.y -= rotateSpeed; // 左を向く
-		}
-		if (keys[DIK_RIGHT]) {
-			cameraRotate.y += rotateSpeed; // 右を向く
-		}
+		float rotateSpeed = 0.02f;
+		if (keys[DIK_UP]) { cameraRotate.x += rotateSpeed; }
+		if (keys[DIK_DOWN]) { cameraRotate.x -= rotateSpeed; }
+		if (keys[DIK_LEFT]) { cameraRotate.y -= rotateSpeed; }
+		if (keys[DIK_RIGHT]) { cameraRotate.y += rotateSpeed; }
 
 		ImGui::Begin("Window");
 
 		ImGui::DragFloat3("CameraTranslate", &cameraTranslate.x, 0.01f);
 		ImGui::DragFloat3("CameraRotate", &cameraRotate.x, 0.01f);
 
-		// ImGuiでAABBのパラメータを変更できるようにする
+		// ImGuiでAABBと球のパラメータを変更できるようにする
 		ImGui::Separator();
-		ImGui::Text("AABB 1");
-		ImGui::DragFloat3("AABB1 Min", &aabb1.min.x, 0.01f);
-		ImGui::DragFloat3("AABB1 Max", &aabb1.max.x, 0.01f);
+		ImGui::Text("AABB");
+		ImGui::DragFloat3("AABB Min", &aabb.min.x, 0.01f);
+		ImGui::DragFloat3("AABB Max", &aabb.max.x, 0.01f);
 
-		ImGui::Text("AABB 2");
-		ImGui::DragFloat3("AABB2 Min", &aabb2.min.x, 0.01f);
-		ImGui::DragFloat3("AABB2 Max", &aabb2.max.x, 0.01f);
+		ImGui::Text("Sphere");
+		ImGui::DragFloat3("Sphere Center", &sphere.center.x, 0.01f);
+		ImGui::DragFloat("Sphere Radius", &sphere.radius, 0.01f);
 
-		// minとmaxが入れ替わらないように注意する（簡易的な対処コードを適用）
-		aabb1.min.x = (std::min)(aabb1.min.x, aabb1.max.x);
-		aabb1.max.x = (std::max)(aabb1.min.x, aabb1.max.x);
-		aabb1.min.y = (std::min)(aabb1.min.y, aabb1.max.y);
-		aabb1.max.y = (std::max)(aabb1.min.y, aabb1.max.y);
-		aabb1.min.z = (std::min)(aabb1.min.z, aabb1.max.z);
-		aabb1.max.z = (std::max)(aabb1.min.z, aabb1.max.z);
-
-		aabb2.min.x = (std::min)(aabb2.min.x, aabb2.max.x);
-		aabb2.max.x = (std::max)(aabb2.min.x, aabb2.max.x);
-		aabb2.min.y = (std::min)(aabb2.min.y, aabb2.max.y);
-		aabb2.max.y = (std::max)(aabb2.min.y, aabb2.max.y);
-		aabb2.min.z = (std::min)(aabb2.min.z, aabb2.max.z);
-		aabb2.max.z = (std::max)(aabb2.min.z, aabb2.max.z);
+		// minとmaxが入れ替わらないように防ぐ処理
+		aabb.min.x = (std::min)(aabb.min.x, aabb.max.x);
+		aabb.max.x = (std::max)(aabb.min.x, aabb.max.x);
+		aabb.min.y = (std::min)(aabb.min.y, aabb.max.y);
+		aabb.max.y = (std::max)(aabb.min.y, aabb.max.y);
+		aabb.min.z = (std::min)(aabb.min.z, aabb.max.z);
+		aabb.max.z = (std::max)(aabb.min.z, aabb.max.z);
 
 		ImGui::End();
 
 		Matrix4x4 cameraMatrix = MakeAffineMatrix({ 1.0f, 1.0f, 1.0f }, cameraRotate, cameraTranslate);
-
 		Matrix4x4 viewMatrix = Inverse(cameraMatrix);
-
 		Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(0.45f, float(kWindowWidth) / float(kWindowHeight), 0.1f, 100.0f);
-
 		Matrix4x4 viewProjectionMatrix = Multiply(viewMatrix, projectionMatrix);
-
 		Matrix4x4 viewportMatrix = MakeViewportMatrix(0.0f, 0.0f, float(kWindowWidth), float(kWindowHeight), 0.0f, 1.0f);
 
 		///
@@ -751,33 +476,28 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 		DrawGrid(viewProjectionMatrix, viewportMatrix);
 
-		// AABBを2つ表示し、衝突していたらどちらかを赤く表示する。衝突していなければ白。
-		uint32_t color = 0xFFFFFFFF; // 初期値は白色
-
-		// AABBとAABBの衝突判定関数を作成する
-		if (IsCollision(aabb1, aabb2))
+		// 衝突状態によって色を変える処理
+		uint32_t color = 0xFFFFFFFF; // 通常時は白色
+		if (IsCollision(aabb, sphere))
 		{
 			color = 0xFF0000FF; // 衝突時は赤色
 		}
 
-		// AABBの描画関数を呼び出す
-		DrawAABB(aabb1, viewProjectionMatrix, viewportMatrix, color);
-		DrawAABB(aabb2, viewProjectionMatrix, viewportMatrix, 0xFFFFFFFF); // 片方は常に白
+		// AABBと球を描画する
+		DrawAABB(aabb, viewProjectionMatrix, viewportMatrix, color);
+		DrawSphere(sphere, viewProjectionMatrix, viewportMatrix, 0xFFFFFFFF);
 
 		///
 		/// ↑描画処理ここまで
 		///
 
-		// フレームの終了
 		Novice::EndFrame();
 
-		// ESCキーが押されたらループを抜ける
 		if (preKeys[DIK_ESCAPE] == 0 && keys[DIK_ESCAPE] != 0) {
 			break;
 		}
 	}
 
-	// ライブラリの終了
 	Novice::Finalize();
 	return 0;
 }
