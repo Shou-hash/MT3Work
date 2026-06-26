@@ -52,6 +52,22 @@ Vector3 Multiply(float scalar, const Vector3& v)
 	return Vector3{ scalar * v.x, scalar * v.y, scalar * v.z };
 }
 
+// 内積計算
+float Dot(const Vector3& v1, const Vector3& v2)
+{
+	return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
+}
+
+// 外積計算
+Vector3 Cross(const Vector3& v1, const Vector3& v2)
+{
+	return Vector3{
+		v1.y * v2.z - v1.z * v2.y,
+		v1.z * v2.x - v1.x * v2.z,
+		v1.x * v2.y - v1.y * v2.x
+	};
+}
+
 // 逆行列計算
 Matrix4x4 Inverse(const Matrix4x4& m)
 {
@@ -208,7 +224,7 @@ Matrix4x4 MakeViewportMatrix(float left, float top, float width, float height, f
 	return result;
 }
 
-// OBBと線分（Segment）の衝突判定（AABB構造体を使わずにローカル空間で直接計算）
+// OBBと線分（Segment）の衝突判定
 bool IsCollision(const Segment& segment, const OBB& obb)
 {
 	// OBBのワールド行列を作成
@@ -252,9 +268,9 @@ bool IsCollision(const Segment& segment, const OBB& obb)
 
 	// Y軸のスラブ判定
 	if (std::abs(localDiff.y) < 1e-6f) {
-		if (localOrigin.y < boxMin.y || localOrigin.y > boxMax.y) 
-		{ 
-			return false; 
+		if (localOrigin.y < boxMin.y || localOrigin.y > boxMax.y)
+		{
+			return false;
 		}
 	}
 	else {
@@ -278,8 +294,75 @@ bool IsCollision(const Segment& segment, const OBB& obb)
 		tFar = (std::min)(tFar, (std::max)(t1, t2));
 	}
 
-	// 衝突区間の整合性チェック（線分の範囲 [0, 1] に収まっているか）
+	// 衝突区間の整合性チェック
 	return (tNear <= tFar && tNear <= 1.0f && tFar >= 0.0f);
+}
+
+// 分離軸定理(SAT)に基づく、特定の軸におけるOBBの影の長さを計算するヘルパー関数
+float CalculateProjectedRadius(const OBB& obb, const Vector3& axis)
+{
+	return std::abs(Dot(Multiply(obb.size.x, obb.orientations[0]), axis)) +
+		std::abs(Dot(Multiply(obb.size.y, obb.orientations[1]), axis)) +
+		std::abs(Dot(Multiply(obb.size.z, obb.orientations[2]), axis));
+}
+
+// OBBとOBBの衝突判定関数（分離軸定理を用いる）
+bool IsCollision(const OBB& obb1, const OBB& obb2)
+{
+	// 15本の分離軸候補をリストアップ
+	Vector3 axes[15];
+
+	// 各OBBの面法線（計6本）
+	axes[0] = obb1.orientations[0];
+	axes[1] = obb1.orientations[1];
+	axes[2] = obb1.orientations[2];
+	axes[3] = obb2.orientations[0];
+	axes[4] = obb2.orientations[1];
+	axes[5] = obb2.orientations[2];
+
+	// 各辺の組み合わせのクロス積（計9本）
+	int index = 6;
+	for (int i = 0; i < 3; ++i) {
+		for (int j = 0; j < 3; ++j) {
+			axes[index++] = Cross(obb1.orientations[i], obb2.orientations[j]);
+		}
+	}
+
+	// 2つのOBBの中心間を結ぶベクトル
+	Vector3 centerDir = Subtract(obb2.center, obb1.center);
+
+	// すべての候補軸に対して分離しているかをテスト
+	for (int i = 0; i < 15; ++i) {
+		Vector3 axis = axes[i];
+
+		// クロス積が並行になり長さが0になった軸はスキップ
+		float axisLengthSq = Dot(axis, axis);
+		if (axisLengthSq < 1e-6f) {
+			continue;
+		}
+
+		// 単位ベクトル化
+		float axisLength = std::sqrt(axisLengthSq);
+		axis = Vector3{ axis.x / axisLength, axis.y / axisLength, axis.z / axisLength };
+
+		// それぞれのOBBを軸に射影した影の長さを算出（L1, L2）
+		float L1 = CalculateProjectedRadius(obb1, axis);
+		float L2 = CalculateProjectedRadius(obb2, axis);
+
+		// 影の長さの合計（sumSpan）
+		float sumSpan = L1 + L2;
+
+		// 2つの影の両端の差分（longSpan相当：中心間距離の射影成分）
+		float centerDistProj = std::abs(Dot(centerDir, axis));
+
+		// 1つでも分離しているなら衝突していない
+		if (sumSpan < centerDistProj) {
+			return false; // 分離している（隙間がある）ので衝突していない
+		}
+	}
+
+	// どの候補軸も分離していないなら衝突している
+	return true;
 }
 
 // OBBの描画関数
@@ -378,18 +461,27 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	Vector3 cameraTranslate = { 0.0f, 2.5f, -10.0f };
 	Vector3 cameraRotate = { 0.26f, 0.0f, 0.0f };
 
-	// OBBの初期設定（スライド1枚目の初期値）
-	OBB obb;
-	obb.center = { -1.0f, 0.0f, 0.0f };
-	obb.size = { 0.5f, 0.5f, 0.5f };
-	obb.orientations[0] = { 1.0f, 0.0f, 0.0f };
-	obb.orientations[1] = { 0.0f, 1.0f, 0.0f };
-	obb.orientations[2] = { 0.0f, 0.0f, 1.0f };
+	// OBB1の初期設定（スライドの初期値）
+	OBB obb1;
+	obb1.center = { 0.0f, 0.0f, 0.0f };
+	obb1.size = { 0.83f, 0.26f, 0.24f };
+	obb1.orientations[0] = { 1.0f, 0.0f, 0.0f };
+	obb1.orientations[1] = { 0.0f, 1.0f, 0.0f };
+	obb1.orientations[2] = { 0.0f, 0.0f, 1.0f };
 
-	// ImGui用のOBB回転角度（オイラー角）
-	Vector3 obbRotate = { 0.0f, 0.0f, 0.0f };
+	// OBB2の初期設定（スライドの初期値）
+	OBB obb2;
+	obb2.center = { 0.9f, 0.66f, 0.78f };
+	obb2.size = { 0.5f, 0.37f, 0.5f };
+	obb2.orientations[0] = { 1.0f, 0.0f, 0.0f };
+	obb2.orientations[1] = { 0.0f, 1.0f, 0.0f };
+	obb2.orientations[2] = { 0.0f, 0.0f, 1.0f };
 
-	// 線分（Segment）の初期設定（スライド1枚目の初期値）
+	// ImGui用の各OBB回転角度（オイラー角）
+	Vector3 rotate1 = { 0.0f, 0.0f, 0.0f };
+	Vector3 rotate2 = { -0.05f, -2.49f, 0.15f };
+
+	// 線分（Segment）の初期設定
 	Segment segment;
 	segment.origin = { -0.8f, -0.3f, 0.0f };
 	segment.diff = { 0.5f, 0.5f, 0.5f };
@@ -421,13 +513,21 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		ImGui::DragFloat3("CameraTranslate", &cameraTranslate.x, 0.01f);
 		ImGui::DragFloat3("CameraRotate", &cameraRotate.x, 0.01f);
 
-		// ImGui設定
+		// ImGui設定 - OBB1
 		ImGui::Separator();
-		ImGui::Text("OBB");
-		ImGui::DragFloat3("OBB Center", &obb.center.x, 0.01f);
-		ImGui::DragFloat3("OBB Size", &obb.size.x, 0.01f);
-		ImGui::DragFloat3("OBB Rotate (Rad)", &obbRotate.x, 0.01f);
+		ImGui::Text("OBB1");
+		ImGui::DragFloat3("OBB1 Center", &obb1.center.x, 0.01f);
+		ImGui::DragFloat3("OBB1 Size", &obb1.size.x, 0.01f);
+		ImGui::DragFloat3("OBB1 Rotate (Rad)", &rotate1.x, 0.01f);
 
+		// ImGui設定 - OBB2
+		ImGui::Separator();
+		ImGui::Text("OBB2");
+		ImGui::DragFloat3("OBB2 Center", &obb2.center.x, 0.01f);
+		ImGui::DragFloat3("OBB2 Size", &obb2.size.x, 0.01f);
+		ImGui::DragFloat3("OBB2 Rotate (Rad)", &rotate2.x, 0.01f);
+
+		// ImGui設定 - Segment
 		ImGui::Separator();
 		ImGui::Text("Segment");
 		ImGui::DragFloat3("Segment Origin", &segment.origin.x, 0.01f);
@@ -435,11 +535,17 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 		ImGui::End();
 
-		// 入力された角度情報から回転行列を作成し、OBBの方向ベクトル（軸）を更新する
-		Matrix4x4 obbRotMat = Multiply(rotationX(obbRotate.x), Multiply(rotationY(obbRotate.y), rotationZ(obbRotate.z)));
-		obb.orientations[0] = { obbRotMat.m[0][0], obbRotMat.m[0][1], obbRotMat.m[0][2] }; // X軸の向き
-		obb.orientations[1] = { obbRotMat.m[1][0], obbRotMat.m[1][1], obbRotMat.m[1][2] }; // Y軸の向き
-		obb.orientations[2] = { obbRotMat.m[2][0], obbRotMat.m[2][1], obbRotMat.m[2][2] }; // Z軸の向き
+		// OBB1の回転と軸更新
+		Matrix4x4 obb1RotMat = Multiply(rotationX(rotate1.x), Multiply(rotationY(rotate1.y), rotationZ(rotate1.z)));
+		obb1.orientations[0] = { obb1RotMat.m[0][0], obb1RotMat.m[0][1], obb1RotMat.m[0][2] };
+		obb1.orientations[1] = { obb1RotMat.m[1][0], obb1RotMat.m[1][1], obb1RotMat.m[1][2] };
+		obb1.orientations[2] = { obb1RotMat.m[2][0], obb1RotMat.m[2][1], obb1RotMat.m[2][2] };
+
+		// OBB2の回転と軸更新
+		Matrix4x4 obb2RotMat = Multiply(rotationX(rotate2.x), Multiply(rotationY(rotate2.y), rotationZ(rotate2.z)));
+		obb2.orientations[0] = { obb2RotMat.m[0][0], obb2RotMat.m[0][1], obb2RotMat.m[0][2] };
+		obb2.orientations[1] = { obb2RotMat.m[1][0], obb2RotMat.m[1][1], obb2RotMat.m[1][2] };
+		obb2.orientations[2] = { obb2RotMat.m[2][0], obb2RotMat.m[2][1], obb2RotMat.m[2][2] };
 
 		Matrix4x4 cameraMatrix = MakeAffineMatrix({ 1.0f, 1.0f, 1.0f }, cameraRotate, cameraTranslate);
 		Matrix4x4 viewMatrix = Inverse(cameraMatrix);
@@ -458,17 +564,19 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		DrawGrid(viewProjectionMatrix, viewportMatrix);
 
 		// 衝突状態によって色を変える
-		uint32_t obbColor = 0xFFFFFFFF;
-		uint32_t segmentColor = 0xFFFFFFFF;
+		uint32_t obb1Color = 0xFFFFFFFF; // 通常時：白
+		uint32_t obb2Color = 0xFFFFFFFF; // 通常時：白
 
-		if (IsCollision(segment, obb))
+		// OBB1とOBB2の衝突判定
+		if (IsCollision(obb1, obb2))
 		{
-			obbColor = 0xFF0000FF;     // 衝突時：赤
+			obb1Color = 0xFF0000FF; // 衝突時：赤
+			obb2Color = 0xFF0000FF; // 衝突時：赤
 		}
 
 		// 描画
-		DrawOBB(obb, viewProjectionMatrix, viewportMatrix, obbColor);
-		DrawSegment(segment, viewProjectionMatrix, viewportMatrix, segmentColor);
+		DrawOBB(obb1, viewProjectionMatrix, viewportMatrix, obb1Color);
+		DrawOBB(obb2, viewProjectionMatrix, viewportMatrix, obb2Color);
 
 		///
 		/// ↑描画処理ここまで
