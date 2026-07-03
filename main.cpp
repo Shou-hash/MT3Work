@@ -477,6 +477,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	obb2.orientations[1] = { 0.0f, 1.0f, 0.0f };
 	obb2.orientations[2] = { 0.0f, 0.0f, 1.0f };
 
+
 	// ImGui用の各OBB回転角度（オイラー角）
 	Vector3 rotate1 = { 0.0f, 0.0f, 0.0f };
 	Vector3 rotate2 = { -0.05f, -2.49f, 0.15f };
