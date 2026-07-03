@@ -20,6 +20,12 @@ struct Matrix4x4
 	float m[4][4];
 };
 
+struct Sphere
+{
+	Vector3 center;
+	float radius;
+};
+
 struct Segment
 {
 	Vector3 origin;
@@ -258,6 +264,59 @@ void DrawGrid(const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMa
 	}
 }
 
+void DrawSphere(const Sphere& sphere, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
+	const uint32_t kSubdivisions = 20;
+	const float kLonEvery = 2.0f * std::numbers::pi_v<float> / (kSubdivisions);
+	const float kLatEvery = std::numbers::pi_v<float> / (kSubdivisions);
+
+	for (uint32_t latIndex = 0; latIndex < kSubdivisions; ++latIndex)
+	{
+		float lat = -std::numbers::pi_v<float> / 2.0f + latIndex * kLatEvery;
+
+		for (uint32_t lonIndex = 0; lonIndex < kSubdivisions; ++lonIndex)
+		{
+			float lon = lonIndex * kLonEvery;
+
+			Vector3 a, b, c;
+			a.x = sphere.center.x + sphere.radius * cosf(lat) * cosf(lon);
+			a.y = sphere.center.y + sphere.radius * sinf(lat);
+			a.z = sphere.center.z + sphere.radius * cosf(lat) * sinf(lon);
+
+			b.x = sphere.center.x + sphere.radius * cosf(lat) * cosf(lon + kLonEvery);
+			b.y = sphere.center.y + sphere.radius * sinf(lat);
+			b.z = sphere.center.z + sphere.radius * cosf(lat) * sinf(lon + kLonEvery);
+
+			c.x = sphere.center.x + sphere.radius * cosf(lat + kLatEvery) * cosf(lon);
+			c.y = sphere.center.y + sphere.radius * sinf(lat + kLatEvery);
+			c.z = sphere.center.z + sphere.radius * cosf(lat + kLatEvery) * sinf(lon);
+
+			// ViewProjection行列でNDC座標に変換
+			Vector3 aNdc = Transform(a, viewProjectionMatrix);
+			Vector3 bNdc = Transform(b, viewProjectionMatrix);
+			Vector3 cNdc = Transform(c, viewProjectionMatrix);
+
+			// Viewport行列でスクリーン座標に変換
+			Vector3 aScreen = Transform(aNdc, viewportMatrix);
+			Vector3 bScreen = Transform(bNdc, viewportMatrix);
+			Vector3 cScreen = Transform(cNdc, viewportMatrix);
+
+			// 緯線（横方向）の描画
+			Novice::DrawLine(
+				int(aScreen.x), int(aScreen.y),
+				int(bScreen.x), int(bScreen.y),
+				color
+			);
+
+			// 経線（縦方向）の描画
+			Novice::DrawLine(
+				int(aScreen.x), int(aScreen.y),
+				int(cScreen.x), int(cScreen.y),
+				color
+			);
+		}
+	}
+}
+
 // 実装に必要な線形補間関数
 Vector3 Lerp(const Vector3& v1, const Vector3& v2, float t)
 {
@@ -295,42 +354,6 @@ void DrawBezier(const Vector3& controlPoint0, const Vector3& controlPoint1, cons
 	}
 }
 
-// 球（コントロールポイント表示用）の描画関数
-void DrawSphere(const Vector3& center, float radius, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color)
-{
-	const int kSubdivisions = 8;
-	const float kLonEvery = 2.0f * std::numbers::pi_v<float> / float(kSubdivisions);
-	const float kLatEvery = std::numbers::pi_v<float> / float(kSubdivisions);
-
-	for (int latIndex = 0; latIndex < kSubdivisions; ++latIndex)
-	{
-		float lat = -std::numbers::pi_v<float> / 2.0f + float(latIndex) * kLatEvery;
-		for (int lonIndex = 0; lonIndex < kSubdivisions; ++lonIndex)
-		{
-			float lon = float(lonIndex) * kLonEvery;
-
-			auto makeVertex = [&](float latAngle, float lonAngle) {
-				Vector3 p = {
-					cosf(latAngle) * cosf(lonAngle),
-					sinf(latAngle),
-					cosf(latAngle) * sinf(lonAngle)
-				};
-				Vector3 worldPos = Add(center, Multiply(radius, p));
-				return Transform(Transform(worldPos, viewProjectionMatrix), viewportMatrix);
-				};
-
-			Vector3 p0 = makeVertex(lat, lon);
-			Vector3 p1 = makeVertex(lat + kLatEvery, lon);
-			Vector3 p2 = makeVertex(lat, lon + kLonEvery);
-
-			Novice::DrawLine(int(p0.x), int(p0.y), int(p1.x), int(p1.y), color);
-			Novice::DrawLine(int(p0.x), int(p0.y), int(p2.x), int(p2.y), color);
-		}
-	}
-}
-
-constexpr float kPi = std::numbers::pi_v<float>;
-
 // Windowsアプリでのエントリーポイント(main関数)
 int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
@@ -346,10 +369,22 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	Vector3 cameraRotate = { 0.26f, 0.0f, 0.0f };
 
 	// 実装例の初期値
-	Vector3 controlPoints[3] = {
-		{ -0.8f,  0.58f, 1.0f },
-		{  1.76f, 1.0f, -0.3f },
-		{  0.94f, -0.7f, 2.3f }
+	Vector3 transLates[3] = {
+		{ 0.2f, 1.0f, 0.0f },
+		{ 0.4f, 0.0f, 0.0f },
+		{ 0.3f, 1.0f, 0.0f }
+	};
+
+	Vector3 rotates[3] = {
+		{ 0.0f, 0.0f, -6.8f },
+		{ 0.0f, 0.0f, -1.4f },
+		{ 0.0f, 0.0f, 0.0f }
+	};
+
+	Vector3 scales[3] = {
+		{ 1.0f, 1.0f, 1.0f },
+		{ 1.0f, 1.0f, 1.0f },
+		{ 1.0f, 1.0f, 1.0f }
 	};
 
 	while (Novice::ProcessMessage() == 0) {
@@ -382,11 +417,38 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		// ImGui設定 - コントロールポイントの調整
 		ImGui::Separator();
 		ImGui::Text("Control Points");
-		ImGui::DragFloat3("ControlPoint 0", &controlPoints[0].x, 0.01f);
-		ImGui::DragFloat3("ControlPoint 1", &controlPoints[1].x, 0.01f);
-		ImGui::DragFloat3("ControlPoint 2", &controlPoints[2].x, 0.01f);
+
+		ImGui::DragFloat3("transLates 0", &transLates[0].x, 0.01f);
+		ImGui::DragFloat3("rotates 0", &rotates[0].x, 0.01f);
+		ImGui::DragFloat3("scales 0", &scales[0].x, 0.01f);
+
+		ImGui::DragFloat3("transLates 1", &transLates[1].x, 0.01f);
+		ImGui::DragFloat3("rotates 1", &rotates[1].x, 0.01f);
+		ImGui::DragFloat3("scales 1", &scales[1].x, 0.01f);
+
+		ImGui::DragFloat3("transLates 2", &transLates[2].x, 0.01f);
+		ImGui::DragFloat3("rotates 2", &rotates[2].x, 0.01f);
+		ImGui::DragFloat3("scales 2", &scales[2].x, 0.01f);
 
 		ImGui::End();
+
+		// 各ノードのローカル行列（LocalMatrix）を計算
+		Matrix4x4 localMatrix0 = MakeAffineMatrix(scales[0], rotates[0], transLates[0]);
+		Matrix4x4 localMatrix1 = MakeAffineMatrix(scales[1], rotates[1], transLates[1]);
+		Matrix4x4 localMatrix2 = MakeAffineMatrix(scales[2], rotates[2], transLates[2]);
+
+		// 親子関係に基づきワールド行列（WorldMatrix）を計算
+		// W_s = L_s (肩)
+		// W_e = L_e * W_s (肘)
+		// W_h = L_h * W_e (手)
+		Matrix4x4 worldMatrix0 = localMatrix0;
+		Matrix4x4 worldMatrix1 = Multiply(localMatrix1, worldMatrix0);
+		Matrix4x4 worldMatrix2 = Multiply(localMatrix2, worldMatrix1);
+
+		// 各関節のワールド空間上の中心座標を取得
+		Vector3 position0 = { worldMatrix0.m[3][0], worldMatrix0.m[3][1], worldMatrix0.m[3][2] };
+		Vector3 position1 = { worldMatrix1.m[3][0], worldMatrix1.m[3][1], worldMatrix1.m[3][2] };
+		Vector3 position2 = { worldMatrix2.m[3][0], worldMatrix2.m[3][1], worldMatrix2.m[3][2] };
 
 		Matrix4x4 cameraMatrix = MakeAffineMatrix({ 1.0f, 1.0f, 1.0f }, cameraRotate, cameraTranslate);
 		Matrix4x4 viewMatrix = Inverse(cameraMatrix);
@@ -404,14 +466,18 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 		DrawGrid(viewProjectionMatrix, viewportMatrix);
 
-		// 2次ベジェ曲線の描画
-		DrawBezier(controlPoints[0], controlPoints[1], controlPoints[2], viewProjectionMatrix, viewportMatrix, BLUE);
+		// 各関節をそれぞれの色（肩: 赤, 肘: 緑, 手: 青）の球で描画 (半径 0.05f 程度が見やすいため調整)
+		DrawSphere({ position0, 0.05f }, viewProjectionMatrix, viewportMatrix, 0xFF0000FF); // 赤
+		DrawSphere({ position1, 0.05f }, viewProjectionMatrix, viewportMatrix, 0x00FF00FF); // 緑
+		DrawSphere({ position2, 0.05f }, viewProjectionMatrix, viewportMatrix, 0x0000FFFF); // 青
 
-		// コントロールポイントを0.01mの黒い球で描画
-		for (int i = 0; i < 3; ++i)
-		{
-			DrawSphere(controlPoints[i], 0.01f, viewProjectionMatrix, viewportMatrix, 0x000000FF);
-		}
+		// 肩-肘、肘-手の間に線を引く
+		Vector3 screenPos0 = Transform(Transform(position0, viewProjectionMatrix), viewportMatrix);
+		Vector3 screenPos1 = Transform(Transform(position1, viewProjectionMatrix), viewportMatrix);
+		Vector3 screenPos2 = Transform(Transform(position2, viewProjectionMatrix), viewportMatrix);
+
+		Novice::DrawLine(int(screenPos0.x), int(screenPos0.y), int(screenPos1.x), int(screenPos1.y), 0xFFFFFFFF);
+		Novice::DrawLine(int(screenPos1.x), int(screenPos1.y), int(screenPos2.x), int(screenPos2.y), 0xFFFFFFFF);
 
 		///
 		/// ↑描画処理ここまで
