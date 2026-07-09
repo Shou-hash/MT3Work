@@ -13,6 +13,12 @@ struct Vector3
 	float x;
 	float y;
 	float z;
+
+	// 複合代入演算子（メンバ関数として定義）
+	Vector3& operator*=(float s) { x *= s; y *= s; z *= s; return *this; }
+	Vector3& operator-=(const Vector3& v) { x -= v.x; y -= v.y; z -= v.z; return *this; }
+	Vector3& operator+=(const Vector3& v) { x += v.x; y += v.y; z += v.z; return *this; }
+	Vector3& operator/=(float s) { x /= s; y /= s; z /= s; return *this; }
 };
 
 struct Matrix4x4
@@ -74,6 +80,57 @@ Vector3 Cross(const Vector3& v1, const Vector3& v2)
 	};
 }
 
+// 行列の掛け算
+Matrix4x4 Multiply(const Matrix4x4& a, const Matrix4x4& b) {
+	Matrix4x4 r = {};
+	for (int i = 0; i < 4; ++i) {
+		for (int j = 0; j < 4; ++j) {
+			float sum = 0.0f;
+			for (int k = 0; k < 4; ++k) {
+				sum += a.m[i][k] * b.m[k][j];
+			}
+			r.m[i][j] = sum;
+		}
+	}
+	return r;
+}
+
+// --- 演算子オーバーロードの定義（グローバル関数） ---
+
+// 二項演算子 (Vector3)
+Vector3 operator+(const Vector3& v1, const Vector3& v2) { return Add(v1, v2); }
+Vector3 operator-(const Vector3& v1, const Vector3& v2) { return Subtract(v1, v2); }
+Vector3 operator*(float s, const Vector3& v) { return Multiply(s, v); }
+Vector3 operator*(const Vector3& v, float s) { return s * v; }
+Vector3 operator/(const Vector3& v, float s) { return Multiply(1.0f / s, v); }
+
+// 二項演算子 (Matrix4x4)
+Matrix4x4 operator+(const Matrix4x4& m1, const Matrix4x4& m2) {
+	Matrix4x4 result = {};
+	for (int i = 0; i < 4; ++i) {
+		for (int j = 0; j < 4; ++j) {
+			result.m[i][j] = m1.m[i][j] + m2.m[i][j];
+		}
+	}
+	return result;
+}
+Matrix4x4 operator-(const Matrix4x4& m1, const Matrix4x4& m2) {
+	Matrix4x4 result = {};
+	for (int i = 0; i < 4; ++i) {
+		for (int j = 0; j < 4; ++j) {
+			result.m[i][j] = m1.m[i][j] - m2.m[i][j];
+		}
+	}
+	return result;
+}
+Matrix4x4 operator*(const Matrix4x4& m1, const Matrix4x4& m2) { return Multiply(m1, m2); }
+
+// 単項演算子 (Vector3)
+Vector3 operator-(const Vector3& v) { return { -v.x, -v.y, -v.z }; }
+Vector3 operator+(const Vector3& v) { return v; }
+
+// --------------------------------------------------
+
 // 逆行列計算
 Matrix4x4 Inverse(const Matrix4x4& m)
 {
@@ -123,21 +180,6 @@ Vector3 Transform(const Vector3& vector, const Matrix4x4& matrix)
 		result.z /= w;
 	}
 	return result;
-}
-
-// 行列の掛け算
-Matrix4x4 Multiply(const Matrix4x4& a, const Matrix4x4& b) {
-	Matrix4x4 r = {};
-	for (int i = 0; i < 4; ++i) {
-		for (int j = 0; j < 4; ++j) {
-			float sum = 0.0f;
-			for (int k = 0; k < 4; ++k) {
-				sum += a.m[i][k] * b.m[k][j];
-			}
-			r.m[i][j] = sum;
-		}
-	}
-	return r;
 }
 
 Matrix4x4 identity() {
@@ -202,9 +244,9 @@ Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Vector3& rotate, const Ve
 	Matrix4x4 rotationXMatrix = rotationX(rotate.x);
 	Matrix4x4 rotationYMatrix = rotationY(rotate.y);
 	Matrix4x4 rotationZMatrix = rotationZ(rotate.z);
-	Matrix4x4 rotationMatrix = Multiply(rotationXMatrix, Multiply(rotationYMatrix, rotationZMatrix));
+	Matrix4x4 rotationMatrix = rotationXMatrix * rotationYMatrix * rotationZMatrix; // 演算子オーバーロードを使用
 	Matrix4x4 translationMatrix = MakeTranslationMatrix(translation);
-	return Multiply(scaleMatrix, Multiply(rotationMatrix, translationMatrix));
+	return scaleMatrix * rotationMatrix * translationMatrix; // 演算子オーバーロードを使用
 }
 
 Matrix4x4 MakePerspectiveFovMatrix(float fovY, float aspect, float nearClip, float farClip) {
@@ -233,9 +275,9 @@ Matrix4x4 MakeViewportMatrix(float left, float top, float width, float height, f
 // 分離軸定理(SAT)に基づく、特定の軸におけるOBBの影の長さを計算するヘルパー関数
 float CalculateProjectedRadius(const OBB& obb, const Vector3& axis)
 {
-	return std::abs(Dot(Multiply(obb.size.x, obb.orientations[0]), axis)) +
-		std::abs(Dot(Multiply(obb.size.y, obb.orientations[1]), axis)) +
-		std::abs(Dot(Multiply(obb.size.z, obb.orientations[2]), axis));
+	return std::abs(Dot(obb.size.x * obb.orientations[0], axis)) +
+		std::abs(Dot(obb.size.y * obb.orientations[1], axis)) +
+		std::abs(Dot(obb.size.z * obb.orientations[2], axis)); // 演算子オーバーロードを使用
 }
 
 void DrawGrid(const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix) {
@@ -320,7 +362,7 @@ void DrawSphere(const Sphere& sphere, const Matrix4x4& viewProjectionMatrix, con
 // 実装に必要な線形補間関数
 Vector3 Lerp(const Vector3& v1, const Vector3& v2, float t)
 {
-	return Add(Multiply(1.0f - t, v1), Multiply(t, v2));
+	return (1.0f - t) * v1 + t * v2; // 演算子オーバーロードを使用
 }
 
 // 2次ベジェ曲線の描画関数
@@ -411,49 +453,35 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 		ImGui::Begin("Window");
 
-		ImGui::DragFloat3("CameraTranslate", &cameraTranslate.x, 0.01f);
-		ImGui::DragFloat3("CameraRotate", &cameraRotate.x, 0.01f);
-
-		// ImGui設定 - コントロールポイントの調整
 		ImGui::Separator();
-		ImGui::Text("Control Points");
+		ImGui::Text("Operator Overload Test");
+		Vector3 testA = { 0.2f, 1.0f, 0.0f };
+		Vector3 testB = { 2.4f, 3.1f, 1.2f };
+		Vector3 testC = testA + testB;
+		Vector3 testD = testA - testB;
+		Vector3 testE = testA * 2.4f;
 
-		ImGui::DragFloat3("transLates 0", &transLates[0].x, 0.01f);
-		ImGui::DragFloat3("rotates 0", &rotates[0].x, 0.01f);
-		ImGui::DragFloat3("scales 0", &scales[0].x, 0.01f);
+		Vector3 rotateVals = { 0.4f, 1.43f, -0.8f };
+		Matrix4x4 rotateXMatrix = rotationX(rotateVals.x);
+		Matrix4x4 rotateYMatrix = rotationY(rotateVals.y);
+		Matrix4x4 rotateZMatrix = rotationZ(rotateVals.z);
+		Matrix4x4 rotateMatrix = rotateXMatrix * rotateYMatrix * rotateZMatrix;
 
-		ImGui::DragFloat3("transLates 1", &transLates[1].x, 0.01f);
-		ImGui::DragFloat3("rotates 1", &rotates[1].x, 0.01f);
-		ImGui::DragFloat3("scales 1", &scales[1].x, 0.01f);
-
-		ImGui::DragFloat3("transLates 2", &transLates[2].x, 0.01f);
-		ImGui::DragFloat3("rotates 2", &rotates[2].x, 0.01f);
-		ImGui::DragFloat3("scales 2", &scales[2].x, 0.01f);
-
+		ImGui::Text("c: %f, %f, %f", testC.x, testC.y, testC.z);
+		ImGui::Text("d: %f, %f, %f", testD.x, testD.y, testD.z);
+		ImGui::Text("e: %f, %f, %f", testE.x, testE.y, testE.z);
+		ImGui::Text("matrix:\n%f, %f, %f, %f\n%f, %f, %f, %f\n%f, %f, %f, %f\n%f, %f, %f, %f",
+			rotateMatrix.m[0][0], rotateMatrix.m[0][1], rotateMatrix.m[0][2], rotateMatrix.m[0][3],
+			rotateMatrix.m[1][0], rotateMatrix.m[1][1], rotateMatrix.m[1][2], rotateMatrix.m[1][3],
+			rotateMatrix.m[2][0], rotateMatrix.m[2][1], rotateMatrix.m[2][2], rotateMatrix.m[2][3],
+			rotateMatrix.m[3][0], rotateMatrix.m[3][1], rotateMatrix.m[3][2], rotateMatrix.m[3][3]);
+		
 		ImGui::End();
-
-		// 各ノードのローカル行列（LocalMatrix）を計算
-		Matrix4x4 localMatrix0 = MakeAffineMatrix(scales[0], rotates[0], transLates[0]);
-		Matrix4x4 localMatrix1 = MakeAffineMatrix(scales[1], rotates[1], transLates[1]);
-		Matrix4x4 localMatrix2 = MakeAffineMatrix(scales[2], rotates[2], transLates[2]);
-
-		// 親子関係に基づきワールド行列（WorldMatrix）を計算
-		// W_s = L_s (肩)
-		// W_e = L_e * W_s (肘)
-		// W_h = L_h * W_e (手)
-		Matrix4x4 worldMatrix0 = localMatrix0;
-		Matrix4x4 worldMatrix1 = Multiply(localMatrix1, worldMatrix0);
-		Matrix4x4 worldMatrix2 = Multiply(localMatrix2, worldMatrix1);
-
-		// 各関節のワールド空間上の中心座標を取得
-		Vector3 position0 = { worldMatrix0.m[3][0], worldMatrix0.m[3][1], worldMatrix0.m[3][2] };
-		Vector3 position1 = { worldMatrix1.m[3][0], worldMatrix1.m[3][1], worldMatrix1.m[3][2] };
-		Vector3 position2 = { worldMatrix2.m[3][0], worldMatrix2.m[3][1], worldMatrix2.m[3][2] };
 
 		Matrix4x4 cameraMatrix = MakeAffineMatrix({ 1.0f, 1.0f, 1.0f }, cameraRotate, cameraTranslate);
 		Matrix4x4 viewMatrix = Inverse(cameraMatrix);
 		Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(0.45f, float(kWindowWidth) / float(kWindowHeight), 0.1f, 100.0f);
-		Matrix4x4 viewProjectionMatrix = Multiply(viewMatrix, projectionMatrix);
+		Matrix4x4 viewProjectionMatrix = viewMatrix * projectionMatrix; // 演算子オーバーロードを使用
 		Matrix4x4 viewportMatrix = MakeViewportMatrix(0.0f, 0.0f, float(kWindowWidth), float(kWindowHeight), 0.0f, 1.0f);
 
 		///
@@ -463,21 +491,6 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		///
 		/// ↓描画処理ここから
 		///
-
-		DrawGrid(viewProjectionMatrix, viewportMatrix);
-
-		// 各関節をそれぞれの色（肩: 赤, 肘: 緑, 手: 青）の球で描画 (半径 0.05f 程度が見やすいため調整)
-		DrawSphere({ position0, 0.05f }, viewProjectionMatrix, viewportMatrix, 0xFF0000FF); // 赤
-		DrawSphere({ position1, 0.05f }, viewProjectionMatrix, viewportMatrix, 0x00FF00FF); // 緑
-		DrawSphere({ position2, 0.05f }, viewProjectionMatrix, viewportMatrix, 0x0000FFFF); // 青
-
-		// 肩-肘、肘-手の間に線を引く
-		Vector3 screenPos0 = Transform(Transform(position0, viewProjectionMatrix), viewportMatrix);
-		Vector3 screenPos1 = Transform(Transform(position1, viewProjectionMatrix), viewportMatrix);
-		Vector3 screenPos2 = Transform(Transform(position2, viewProjectionMatrix), viewportMatrix);
-
-		Novice::DrawLine(int(screenPos0.x), int(screenPos0.y), int(screenPos1.x), int(screenPos1.y), 0xFFFFFFFF);
-		Novice::DrawLine(int(screenPos1.x), int(screenPos1.y), int(screenPos2.x), int(screenPos2.y), 0xFFFFFFFF);
 
 		///
 		/// ↑描画処理ここまで
