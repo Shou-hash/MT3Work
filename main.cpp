@@ -46,6 +46,24 @@ struct OBB
 	Vector3 size;            // 各軸の半分の長さ（拡縮）
 };
 
+// ばねを表す構造体Springを作る
+struct Spring {
+	// アンカー。固定された端の位置
+	Vector3 anchor;
+	float naturalLength; // 自然長
+	float stiffness;     // 剛性。バネ定数k
+	float dampingCoefficient; // 減衰係数
+};
+
+struct Ball {
+	Vector3 position;     // ボールの位置
+	Vector3 velocity;     // ボールの速度
+	Vector3 acceleration; // ボールの加速度
+	float mass;           // ボールの質量
+	float radius;         // ボールの半径
+	unsigned int color;   // ボールの色
+};
+
 // ベクトルの足し算
 Vector3 Add(const Vector3& v1, const Vector3& v2)
 {
@@ -80,6 +98,12 @@ Vector3 Cross(const Vector3& v1, const Vector3& v2)
 	};
 }
 
+// ベクトルの長さを計算
+float Length(const Vector3& v)
+{
+	return std::sqrt(Dot(v, v));
+}
+
 // 行列の掛け算
 Matrix4x4 Multiply(const Matrix4x4& a, const Matrix4x4& b) {
 	Matrix4x4 r = {};
@@ -103,6 +127,17 @@ Vector3 operator-(const Vector3& v1, const Vector3& v2) { return Subtract(v1, v2
 Vector3 operator*(float s, const Vector3& v) { return Multiply(s, v); }
 Vector3 operator*(const Vector3& v, float s) { return s * v; }
 Vector3 operator/(const Vector3& v, float s) { return Multiply(1.0f / s, v); }
+
+// ベクトルの正規化
+Vector3 Normalize(const Vector3& v)
+{
+	float len = Length(v);
+	if (len != 0.0f)
+	{
+		return v / len;
+	}
+	return v;
+}
 
 // 二項演算子 (Matrix4x4)
 Matrix4x4 operator+(const Matrix4x4& m1, const Matrix4x4& m2) {
@@ -429,6 +464,22 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		{ 1.0f, 1.0f, 1.0f }
 	};
 
+	// ばねの実装例の初期値
+	Spring spring{};
+	spring.anchor = { 0.0f, 0.0f, 0.0f };
+	spring.naturalLength = 1.0f;
+	spring.stiffness = 100.0f;
+	spring.dampingCoefficient = 2.0f;
+
+	Ball ball{};
+	ball.position = { 1.2f, 0.0f, 0.0f };
+	ball.mass = 2.0f;
+	ball.radius = 0.05f;
+	ball.color = 0x0000FFFF; // BLUE
+
+	// アプリケーションが開始されたかどうかのフラグ
+	bool isStarted = false;
+
 	while (Novice::ProcessMessage() == 0) {
 		Novice::BeginFrame();
 
@@ -451,7 +502,38 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		if (keys[DIK_LEFT]) { cameraRotate.y -= rotateSpeed; }
 		if (keys[DIK_RIGHT]) { cameraRotate.y += rotateSpeed; }
 
+		// deltaTimeの導入
+		float deltaTime = 1.0f / 60.0f;
+
+		if (isStarted) {
+			Vector3 diff = ball.position - spring.anchor;
+			float length = Length(diff);
+			if (length != 0.0f) {
+				Vector3 direction = Normalize(diff);
+				Vector3 restPosition = spring.anchor + direction * spring.naturalLength;
+				Vector3 displacement = length * (ball.position - restPosition);
+				Vector3 restoringForce = -spring.stiffness * displacement;
+				// 減衰抵抗を計算する
+				Vector3 dampingForce = -spring.dampingCoefficient * ball.velocity;
+				// 減衰抵抗も加味して、物体にかかる力を決定する
+				Vector3 force = restoringForce + dampingForce;
+				ball.acceleration = force / ball.mass;
+			}
+			// 加速度も速度もどちらも秒を基準とした値である
+			// それが、1/60秒(deltaTime)適用されたと考える
+			ball.velocity += ball.acceleration * deltaTime;
+			ball.position += ball.velocity * deltaTime;
+		}
+
 		ImGui::Begin("Window");
+
+		if (ImGui::Button("Start")) {
+			// リセットして開始
+			ball.position = { 1.2f, 0.0f, 0.0f };
+			ball.velocity = { 0.0f, 0.0f, 0.0f };
+			ball.acceleration = { 0.0f, 0.0f, 0.0f };
+			isStarted = true;
+		}
 
 		ImGui::Separator();
 		ImGui::Text("Operator Overload Test");
@@ -467,15 +549,6 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		Matrix4x4 rotateZMatrix = rotationZ(rotateVals.z);
 		Matrix4x4 rotateMatrix = rotateXMatrix * rotateYMatrix * rotateZMatrix;
 
-		ImGui::Text("c: %f, %f, %f", testC.x, testC.y, testC.z);
-		ImGui::Text("d: %f, %f, %f", testD.x, testD.y, testD.z);
-		ImGui::Text("e: %f, %f, %f", testE.x, testE.y, testE.z);
-		ImGui::Text("matrix:\n%f, %f, %f, %f\n%f, %f, %f, %f\n%f, %f, %f, %f\n%f, %f, %f, %f",
-			rotateMatrix.m[0][0], rotateMatrix.m[0][1], rotateMatrix.m[0][2], rotateMatrix.m[0][3],
-			rotateMatrix.m[1][0], rotateMatrix.m[1][1], rotateMatrix.m[1][2], rotateMatrix.m[1][3],
-			rotateMatrix.m[2][0], rotateMatrix.m[2][1], rotateMatrix.m[2][2], rotateMatrix.m[2][3],
-			rotateMatrix.m[3][0], rotateMatrix.m[3][1], rotateMatrix.m[3][2], rotateMatrix.m[3][3]);
-		
 		ImGui::End();
 
 		Matrix4x4 cameraMatrix = MakeAffineMatrix({ 1.0f, 1.0f, 1.0f }, cameraRotate, cameraTranslate);
@@ -491,6 +564,19 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		///
 		/// ↓描画処理ここから
 		///
+
+		DrawGrid(viewProjectionMatrix, viewportMatrix);
+
+		// アンカーポイントと先端を結ぶ線分を表示
+		Vector3 anchorNdc = Transform(spring.anchor, viewProjectionMatrix);
+		Vector3 anchorScreen = Transform(anchorNdc, viewportMatrix);
+		Vector3 ballNdc = Transform(ball.position, viewProjectionMatrix);
+		Vector3 ballScreen = Transform(ballNdc, viewportMatrix);
+		Novice::DrawLine(int(anchorScreen.x), int(anchorScreen.y), int(ballScreen.x), int(ballScreen.y), 0xFFFFFFFF);
+
+		// ばねの先端に球（ボール）をつけて表示
+		Sphere ballSphere = { ball.position, ball.radius };
+		DrawSphere(ballSphere, viewProjectionMatrix, viewportMatrix, ball.color);
 
 		///
 		/// ↑描画処理ここまで
