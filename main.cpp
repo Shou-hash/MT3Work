@@ -64,6 +64,14 @@ struct Ball {
 	unsigned int color;   // ボールの色
 };
 
+struct Pendulum {
+	Vector3 anchor;            // アンカーポイント。固定された端の位置
+	float length;              // 紐の長さ
+	float angle;               // 現在の角度[cite: 3]
+	float angularVelocity;     // 角速度ω[cite: 3]
+	float angularAcceleration; // 角加速度[cite: 3]
+};
+
 // ベクトルの足し算
 Vector3 Add(const Vector3& v1, const Vector3& v2)
 {
@@ -464,22 +472,18 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		{ 1.0f, 1.0f, 1.0f }
 	};
 
-	// ばねの実装例の初期値
-	Spring spring{};
-	spring.anchor = { 0.0f, 0.0f, 0.0f };
-	spring.naturalLength = 1.0f;
-	spring.stiffness = 100.0f;
-	spring.dampingCoefficient = 2.0f;
+	// 振り子の初期化[cite: 3]
+	Pendulum pendulum;
+	pendulum.anchor = { 0.0f, 1.0f, 0.0f }; // 画面中央やや上[cite: 3]
+	pendulum.length = 0.8f;                 // 紐の長さ[cite: 3]
+	pendulum.angle = 0.7f;                  // 初期角度（傾き）[cite: 3]
+	pendulum.angularVelocity = 0.0f;        // 初期角速度[cite: 3]
+	pendulum.angularAcceleration = 0.0f;    // 初期角加速度[cite: 3]
 
+	// ボールの見た目用
 	Ball ball{};
-	ball.position = { 1.2f, 0.0f, 0.0f };
-	ball.mass = 2.0f;
 	ball.radius = 0.05f;
 	ball.color = 0x0000FFFF; // BLUE
-
-	// --- 円運動用の変数追加 ---
-	float angularVelocity = 3.14f; // 角速度 ω (rad/s)
-	float angle = 0.0f;            // 角度 θ (rad)
 
 	// アプリケーションが開始されたかどうかのフラグ
 	bool isStarted = false;
@@ -510,34 +514,33 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		float deltaTime = 1.0f / 60.0f;
 
 		if (isStarted) {
-			// 1. 角度を更新（等速円運動の角速度から角度への反映）
-			angle += angularVelocity * deltaTime;
+			// 1. 角加速度を求める: a = -(g / l) * sin(θ)
+			pendulum.angularAcceleration = -(9.8f / pendulum.length) * std::sin(pendulum.angle);
 
-			// 2. 向心加速度を計算する
-			// a = -ω^2 * (position - center)
-			Vector3 difference = ball.position - spring.anchor; // 中心(c)から現在の位置(p)へのベクトル
-			float omegaSquare = angularVelocity * angularVelocity;
-			ball.acceleration = -omegaSquare * difference;
+			// 2. 角速度、角度を更新
+			pendulum.angularVelocity += pendulum.angularAcceleration * deltaTime;
+			pendulum.angle += pendulum.angularVelocity * deltaTime;
 
-			// 3. 速度と位置を更新
-			ball.velocity += ball.acceleration * deltaTime;
-			ball.position += ball.velocity * deltaTime;
+			// 3. 角度から位置(座標)への変換（XY平面での振り子運動・下向き）
+			// スライドの通り、X座標にsin、Y座標にcosを適用して下を向かせます[cite: 3]。
+			ball.position.x = pendulum.anchor.x + std::sin(pendulum.angle) * pendulum.length;
+			ball.position.y = pendulum.anchor.y - std::cos(pendulum.angle) * pendulum.length;
+			ball.position.z = pendulum.anchor.z; // Zは固定（左右移動のみ）[cite: 3]
 		}
 
 		ImGui::Begin("Window");
 
 		if (ImGui::Button("Start")) {
-			// リセットして等速円運動を開始
-			float radius = 1.2f;
-			angle = 0.0f; // 角度をリセット
+			// 振り子の状態を初期化してスタート
+			pendulum.angle = 0.7f; // 初期角度
+			pendulum.angularVelocity = 0.0f;
+			pendulum.angularAcceleration = 0.0f;
 
-			// 初期位置: (r * cos(0), r * sin(0), 0) => (r, 0, 0)
-			ball.position = { radius, 0.0f, 0.0f };
+			// 初期フレームの位置を即座に計算して反映しておく
+			ball.position.x = pendulum.anchor.x + std::sin(pendulum.angle) * pendulum.length;
+			ball.position.y = pendulum.anchor.y - std::cos(pendulum.angle) * pendulum.length;
+			ball.position.z = pendulum.anchor.z;
 
-			// 接線方向の初期速度: (-r * ω * sin(0), r * ω * cos(0), 0) => (0, r * ω, 0)
-			ball.velocity = { 0.0f, radius * angularVelocity, 0.0f };
-
-			ball.acceleration = { 0.0f, 0.0f, 0.0f };
 			isStarted = true;
 		}
 
@@ -573,12 +576,15 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 		DrawGrid(viewProjectionMatrix, viewportMatrix);
 
-		// アンカーポイントと先端を結ぶ線分を表示
-		Vector3 anchorNdc = Transform(spring.anchor, viewProjectionMatrix);
+		// --- 追加：アンカーポイントと振り子の先端（ボール）を結ぶ線の描画 ---
+		Vector3 anchorNdc = Transform(pendulum.anchor, viewProjectionMatrix);
 		Vector3 anchorScreen = Transform(anchorNdc, viewportMatrix);
 		Vector3 ballNdc = Transform(ball.position, viewProjectionMatrix);
 		Vector3 ballScreen = Transform(ballNdc, viewportMatrix);
-		
+
+		// 紐を描画（白などで）
+		Novice::DrawLine(int(anchorScreen.x), int(anchorScreen.y), int(ballScreen.x), int(ballScreen.y), 0xFFFFFFFF);
+
 		// ばねの先端に球（ボール）をつけて表示
 		Sphere ballSphere = { ball.position, ball.radius };
 		DrawSphere(ballSphere, viewProjectionMatrix, viewportMatrix, ball.color);
