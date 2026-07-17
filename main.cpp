@@ -477,6 +477,10 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	ball.radius = 0.05f;
 	ball.color = 0x0000FFFF; // BLUE
 
+	// --- 円運動用の変数追加 ---
+	float angularVelocity = 3.14f; // 角速度 ω (rad/s)
+	float angle = 0.0f;            // 角度 θ (rad)
+
 	// アプリケーションが開始されたかどうかのフラグ
 	bool isStarted = false;
 
@@ -506,21 +510,16 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		float deltaTime = 1.0f / 60.0f;
 
 		if (isStarted) {
-			Vector3 diff = ball.position - spring.anchor;
-			float length = Length(diff);
-			if (length != 0.0f) {
-				Vector3 direction = Normalize(diff);
-				Vector3 restPosition = spring.anchor + direction * spring.naturalLength;
-				Vector3 displacement = length * (ball.position - restPosition);
-				Vector3 restoringForce = -spring.stiffness * displacement;
-				// 減衰抵抗を計算する
-				Vector3 dampingForce = -spring.dampingCoefficient * ball.velocity;
-				// 減衰抵抗も加味して、物体にかかる力を決定する
-				Vector3 force = restoringForce + dampingForce;
-				ball.acceleration = force / ball.mass;
-			}
-			// 加速度も速度もどちらも秒を基準とした値である
-			// それが、1/60秒(deltaTime)適用されたと考える
+			// 1. 角度を更新（等速円運動の角速度から角度への反映）
+			angle += angularVelocity * deltaTime;
+
+			// 2. 向心加速度を計算する
+			// a = -ω^2 * (position - center)
+			Vector3 difference = ball.position - spring.anchor; // 中心(c)から現在の位置(p)へのベクトル
+			float omegaSquare = angularVelocity * angularVelocity;
+			ball.acceleration = -omegaSquare * difference;
+
+			// 3. 速度と位置を更新
 			ball.velocity += ball.acceleration * deltaTime;
 			ball.position += ball.velocity * deltaTime;
 		}
@@ -528,9 +527,16 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		ImGui::Begin("Window");
 
 		if (ImGui::Button("Start")) {
-			// リセットして開始
-			ball.position = { 1.2f, 0.0f, 0.0f };
-			ball.velocity = { 0.0f, 0.0f, 0.0f };
+			// リセットして等速円運動を開始
+			float radius = 1.2f;
+			angle = 0.0f; // 角度をリセット
+
+			// 初期位置: (r * cos(0), r * sin(0), 0) => (r, 0, 0)
+			ball.position = { radius, 0.0f, 0.0f };
+
+			// 接線方向の初期速度: (-r * ω * sin(0), r * ω * cos(0), 0) => (0, r * ω, 0)
+			ball.velocity = { 0.0f, radius * angularVelocity, 0.0f };
+
 			ball.acceleration = { 0.0f, 0.0f, 0.0f };
 			isStarted = true;
 		}
@@ -572,8 +578,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		Vector3 anchorScreen = Transform(anchorNdc, viewportMatrix);
 		Vector3 ballNdc = Transform(ball.position, viewProjectionMatrix);
 		Vector3 ballScreen = Transform(ballNdc, viewportMatrix);
-		Novice::DrawLine(int(anchorScreen.x), int(anchorScreen.y), int(ballScreen.x), int(ballScreen.y), 0xFFFFFFFF);
-
+		
 		// ばねの先端に球（ボール）をつけて表示
 		Sphere ballSphere = { ball.position, ball.radius };
 		DrawSphere(ballSphere, viewProjectionMatrix, viewportMatrix, ball.color);
