@@ -38,21 +38,16 @@ struct Segment
 	Vector3 diff;
 };
 
-// OBBの構造体定義
-struct OBB
-{
-	Vector3 center;          // 中心点
-	Vector3 orientations[3]; // 座標軸（方向単位ベクトル）[0]:X軸, [1]:Y軸, [2]:Z軸
-	Vector3 size;            // 各軸の半分の長さ（拡縮）
+// カプセル構造体
+struct Capsule {
+	Segment segment;
+	float radius;
 };
 
-// ばねを表す構造体Springを作る
-struct Spring {
-	// アンカー。固定された端の位置
-	Vector3 anchor;
-	float naturalLength; // 自然長
-	float stiffness;     // 剛性。バネ定数k
-	float dampingCoefficient; // 減衰係数
+// 平面構造体
+struct Plane {
+	Vector3 normal;
+	float distance;
 };
 
 struct Ball {
@@ -62,22 +57,6 @@ struct Ball {
 	float mass;           // ボールの質量
 	float radius;         // ボールの半径
 	unsigned int color;   // ボールの色
-};
-
-struct ConicalPendulum {
-	Vector3 anchor;            // アンカーポイント。固定された端の位置
-	float length;              // 紐の長さ
-	float halfApexAngle;       // 円錐の頂角の半分
-	float angle;               // 現在の角度
-	float angularVelocity;     // 角速度ω
-};
-
-struct Pendulum {
-	Vector3 anchor;            // アンカーポイント。固定された端の位置
-	float length;              // 紐の長さ
-	float angle;               // 現在の角度
-	float angularVelocity;     // 角速度ω
-	float angularAcceleration; // 角加速度
 };
 
 // ベクトルの足し算
@@ -323,21 +302,28 @@ Matrix4x4 MakeViewportMatrix(float left, float top, float width, float height, f
 	return result;
 }
 
-// 分離軸定理(SAT)に基づく、特定の軸におけるOBBの影の長さを計算するヘルパー関数
-float CalculateProjectedRadius(const OBB& obb, const Vector3& axis)
-{
-	return std::abs(Dot(obb.size.x * obb.orientations[0], axis)) +
-		std::abs(Dot(obb.size.y * obb.orientations[1], axis)) +
-		std::abs(Dot(obb.size.z * obb.orientations[2], axis)); // 演算子オーバーロードを使用
+// 反射ベクトルを求める関数: r = i - 2(i・n)n
+Vector3 Reflect(const Vector3& input, const Vector3& normal) {
+	return input - 2.0f * Dot(input, normal) * normal;
 }
 
+// 射影ベクトルを求める関数（法線方向への射影）
+Vector3 Project(const Vector3& v, const Vector3& normal) {
+	return Dot(v, normal) * normal;
+}
+
+// 線形補間
+Vector3 Lerp(const Vector3& v1, const Vector3& v2, float t) {
+	return (1.0f - t) * v1 + t * v2;
+}
+
+// グリッド描画
 void DrawGrid(const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix) {
 	const float kGridHalfWidth = 2.0f;
 	const uint32_t kSubdivisions = 10;
 	const float kGridEvery = (kGridHalfWidth * 2.0f) / float(kSubdivisions);
 
-	for (uint32_t xIndex = 0; xIndex <= kSubdivisions; ++xIndex)
-	{
+	for (uint32_t xIndex = 0; xIndex <= kSubdivisions; ++xIndex) {
 		float x = -kGridHalfWidth + (xIndex * kGridEvery);
 		Vector3 startPos = { x, 0.0f, -kGridHalfWidth };
 		Vector3 endPos = { x, 0.0f, kGridHalfWidth };
@@ -346,8 +332,7 @@ void DrawGrid(const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMa
 		Novice::DrawLine(int(startScreen.x), int(startScreen.y), int(endScreen.x), int(endScreen.y), 0xAAAAAAFF);
 	}
 
-	for (uint32_t zIndex = 0; zIndex <= kSubdivisions; ++zIndex)
-	{
+	for (uint32_t zIndex = 0; zIndex <= kSubdivisions; ++zIndex) {
 		float z = -kGridHalfWidth + (zIndex * kGridEvery);
 		Vector3 startPos = { -kGridHalfWidth, 0.0f, z };
 		Vector3 endPos = { kGridHalfWidth, 0.0f, z };
@@ -357,17 +342,15 @@ void DrawGrid(const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMa
 	}
 }
 
+// 球描画
 void DrawSphere(const Sphere& sphere, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
-	const uint32_t kSubdivisions = 20;
+	const uint32_t kSubdivisions = 16;
 	const float kLonEvery = 2.0f * std::numbers::pi_v<float> / (kSubdivisions);
 	const float kLatEvery = std::numbers::pi_v<float> / (kSubdivisions);
 
-	for (uint32_t latIndex = 0; latIndex < kSubdivisions; ++latIndex)
-	{
+	for (uint32_t latIndex = 0; latIndex < kSubdivisions; ++latIndex) {
 		float lat = -std::numbers::pi_v<float> / 2.0f + latIndex * kLatEvery;
-
-		for (uint32_t lonIndex = 0; lonIndex < kSubdivisions; ++lonIndex)
-		{
+		for (uint32_t lonIndex = 0; lonIndex < kSubdivisions; ++lonIndex) {
 			float lon = lonIndex * kLonEvery;
 
 			Vector3 a, b, c;
@@ -383,68 +366,45 @@ void DrawSphere(const Sphere& sphere, const Matrix4x4& viewProjectionMatrix, con
 			c.y = sphere.center.y + sphere.radius * sinf(lat + kLatEvery);
 			c.z = sphere.center.z + sphere.radius * cosf(lat + kLatEvery) * sinf(lon);
 
-			// ViewProjection行列でNDC座標に変換
-			Vector3 aNdc = Transform(a, viewProjectionMatrix);
-			Vector3 bNdc = Transform(b, viewProjectionMatrix);
-			Vector3 cNdc = Transform(c, viewProjectionMatrix);
+			Vector3 aScreen = Transform(Transform(a, viewProjectionMatrix), viewportMatrix);
+			Vector3 bScreen = Transform(Transform(b, viewProjectionMatrix), viewportMatrix);
+			Vector3 cScreen = Transform(Transform(c, viewProjectionMatrix), viewportMatrix);
 
-			// Viewport行列でスクリーン座標に変換
-			Vector3 aScreen = Transform(aNdc, viewportMatrix);
-			Vector3 bScreen = Transform(bNdc, viewportMatrix);
-			Vector3 cScreen = Transform(cNdc, viewportMatrix);
-
-			// 緯線（横方向）の描画
-			Novice::DrawLine(
-				int(aScreen.x), int(aScreen.y),
-				int(bScreen.x), int(bScreen.y),
-				color
-			);
-
-			// 経線（縦方向）の描画
-			Novice::DrawLine(
-				int(aScreen.x), int(aScreen.y),
-				int(cScreen.x), int(cScreen.y),
-				color
-			);
+			Novice::DrawLine(int(aScreen.x), int(aScreen.y), int(bScreen.x), int(bScreen.y), color);
+			Novice::DrawLine(int(aScreen.x), int(aScreen.y), int(cScreen.x), int(cScreen.y), color);
 		}
 	}
 }
 
-// 実装に必要な線形補間関数
-Vector3 Lerp(const Vector3& v1, const Vector3& v2, float t)
-{
-	return (1.0f - t) * v1 + t * v2; // 演算子オーバーロードを使用
-}
-
-// 2次ベジェ曲線の描画関数
-void DrawBezier(const Vector3& controlPoint0, const Vector3& controlPoint1, const Vector3& controlPoint2,
-	const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color)
-{
-	const int kSubdivisions = 32; // 曲線の分割数
-	Vector3 previousScreenPos = {};
-
-	for (int i = 0; i <= kSubdivisions; ++i)
-	{
-		float t = float(i) / float(kSubdivisions);
-
-		// 制御点p0, p1を線形補間
-		Vector3 p0p1 = Lerp(controlPoint0, controlPoint1, t);
-		// 制御点p1, p2を線形補間
-		Vector3 p1p2 = Lerp(controlPoint1, controlPoint2, t);
-		// 補間点p0p1, p1p2をさらに線形補間
-		Vector3 p = Lerp(p0p1, p1p2, t);
-
-		// スクリーン座標に変換
-		Vector3 ndc = Transform(p, viewProjectionMatrix);
-		Vector3 screenPos = Transform(ndc, viewportMatrix);
-
-		// 最初の点以外は前の点と線で結ぶ
-		if (i > 0)
-		{
-			Novice::DrawLine(int(previousScreenPos.x), int(previousScreenPos.y), int(screenPos.x), int(screenPos.y), color);
-		}
-		previousScreenPos = screenPos;
+// 傾斜平面描画用の4つの角を計算してワイヤーフレームを描画
+void DrawPlane(const Plane& plane, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
+	// 平面の法線から適当なローカル座標系軸を作る
+	Vector3 u = { 1.0f, 0.0f, 0.0f };
+	if (std::abs(Dot(plane.normal, u)) > 0.99f) {
+		u = { 0.0f, 0.0f, 1.0f };
 	}
+	Vector3 r = Normalize(Cross(plane.normal, u));
+	Vector3 f = Normalize(Cross(r, plane.normal));
+
+	// 平面上の中心点
+	Vector3 center = plane.normal * plane.distance;
+
+	// 平面の描画サイズ
+	float halfSize = 2.0f;
+	Vector3 p0 = center + r * halfSize + f * halfSize;
+	Vector3 p1 = center - r * halfSize + f * halfSize;
+	Vector3 p2 = center - r * halfSize - f * halfSize;
+	Vector3 p3 = center + r * halfSize - f * halfSize;
+
+	Vector3 s0 = Transform(Transform(p0, viewProjectionMatrix), viewportMatrix);
+	Vector3 s1 = Transform(Transform(p1, viewProjectionMatrix), viewportMatrix);
+	Vector3 s2 = Transform(Transform(p2, viewProjectionMatrix), viewportMatrix);
+	Vector3 s3 = Transform(Transform(p3, viewProjectionMatrix), viewportMatrix);
+
+	Novice::DrawLine(int(s0.x), int(s0.y), int(s1.x), int(s1.y), color);
+	Novice::DrawLine(int(s1.x), int(s1.y), int(s2.x), int(s2.y), color);
+	Novice::DrawLine(int(s2.x), int(s2.y), int(s3.x), int(s3.y), color);
+	Novice::DrawLine(int(s3.x), int(s3.y), int(s0.x), int(s0.y), color);
 }
 
 // Windowsアプリでのエントリーポイント(main関数)
@@ -461,26 +421,26 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	Vector3 cameraTranslate = { 0.0f, 2.5f, -10.0f };
 	Vector3 cameraRotate = { 0.26f, 0.0f, 0.0f };
 
-	// 円錐振り子の初期化
-	ConicalPendulum conicalPendulum;
-	conicalPendulum.anchor = { 0.0f, 1.0f, 0.0f };    // 固定端の位置
-	conicalPendulum.length = 0.8f;                    // 紐の長さ L
-	conicalPendulum.halfApexAngle = 0.7f;             // 円錐の頂角の半分 θ
-	conicalPendulum.angle = 0.0f;                     // 現在の回転角度
-	conicalPendulum.angularVelocity = 0.0f;           // 角速度
+	// 平面の初期化
+	Plane plane;
+	plane.normal = Normalize({ -0.2f, 0.9f, -0.3f });
+	plane.distance = 0.0f;
 
-	// 振り子の初期化[cite: 3]
-	Pendulum pendulum;
-	pendulum.anchor = { 0.0f, 1.0f, 0.0f }; // 画面中央やや上[cite: 3]
-	pendulum.length = 0.8f;                 // 紐の長さ[cite: 3]
-	pendulum.angle = 0.7f;                  // 初期角度（傾き）[cite: 3]
-	pendulum.angularVelocity = 0.0f;        // 初期角速度[cite: 3]
-	pendulum.angularAcceleration = 0.0f;    // 初期角加速度[cite: 3]
+	// ImGui操作用の一時角度変数（ラジアン）
+	float planePitch = 0.0f; // X軸周りの回転
+	float planeRoll = 0.0f;  // Z軸周りの回転
 
-	// ボールの見た目用
+	// ボールの初期化
 	Ball ball{};
-	ball.radius = 0.05f;
-	ball.color = 0x0000FFFF; // BLUE
+	ball.position = { 0.8f, 2.5f, 0.3f };
+	ball.velocity = { 0.0f, 0.0f, 0.0f };
+	ball.acceleration = { 0.0f, -9.8f, 0.0f };
+	ball.mass = 2.0f;
+	ball.radius = 0.08f;
+	ball.color = 0xFFFFFFFF; // WHITE
+
+	// 反発係数 e
+	float restitution = 0.6f;
 
 	// アプリケーションが開始されたかどうかのフラグ
 	bool isStarted = false;
@@ -510,45 +470,75 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		// deltaTimeの導入
 		float deltaTime = 1.0f / 60.0f;
 
-		// 円錐振り子の位置と物理更新
+		// 角度から平面の法線を生成
+		Matrix4x4 planeRotMatrix = rotationX(planePitch) * rotationZ(planeRoll);
+		plane.normal = Transform({ 0.0f, 1.0f, 0.0f }, planeRotMatrix); // 初期法線(0,1,0)を回転
+
+		// 2. 物理演算アップデート
 		if (isStarted) {
-			// 1. 角速度ωの計算: ω = √(g / (L * cos(θ)))
-			conicalPendulum.angularVelocity = std::sqrt(9.8f / (conicalPendulum.length * std::cos(conicalPendulum.halfApexAngle)));
+			// 移動前の位置を保存
+			Vector3 previousPosition = ball.position;
 
-			// 2. 角度の加算: angle += ω * dt
-			conicalPendulum.angle += conicalPendulum.angularVelocity * deltaTime;
+			// 重力による速度と位置の更新
+			ball.velocity += ball.acceleration * deltaTime;
+			ball.position += ball.velocity * deltaTime;
 
-			// 3. 半径と高さの計算
-			float radius = std::sin(conicalPendulum.halfApexAngle) * conicalPendulum.length;
-			float height = std::cos(conicalPendulum.halfApexAngle) * conicalPendulum.length;
+			// スイープ（カプセル）による平面衝突判定と埋まり戻し
+			// ボールの移動軌跡（Segment）を作成
+			Segment movementSegment;
+			movementSegment.origin = previousPosition;
+			movementSegment.diff = ball.position - previousPosition;
 
-			// 4. ボブ(球体)の3D位置座標を算出
-			ball.position.x = conicalPendulum.anchor.x + std::cos(conicalPendulum.angle) * radius;
-			ball.position.y = conicalPendulum.anchor.y - height;
-			ball.position.z = conicalPendulum.anchor.z - std::sin(conicalPendulum.angle) * radius;
-		}
-		else {
-			// 開始されていない場合でも、ImGuiでのスライダー調整を即座に位置に反映させる
-			float radius = std::sin(conicalPendulum.halfApexAngle) * conicalPendulum.length;
-			float height = std::cos(conicalPendulum.halfApexAngle) * conicalPendulum.length;
-			ball.position.x = conicalPendulum.anchor.x + std::cos(conicalPendulum.angle) * radius;
-			ball.position.y = conicalPendulum.anchor.y - height;
-			ball.position.z = conicalPendulum.anchor.z - std::sin(conicalPendulum.angle) * radius;
+			// 平面と前後の位置関係（各点から平面への最短距離）を調べる
+			float distPrev = Dot(previousPosition, plane.normal) - plane.distance;
+			float distCurr = Dot(ball.position, plane.normal) - plane.distance;
+
+			// 前フレームで平面の上（法線側）にいて、現フレームで平面の下に突き抜けた場合、衝突とみなす
+			if (distPrev >= ball.radius && distCurr < ball.radius) {
+
+				// 1. 衝突が起こった瞬間（ちょうど距離が radius になる瞬間）のパラメータ t を算出する
+				// dist(t) = distPrev + t * (distCurr - distPrev) = radius
+				float t = 0.0f;
+				float denominator = distPrev - distCurr;
+				if (std::abs(denominator) > 0.0001f) {
+					t = (distPrev - ball.radius) / denominator;
+				}
+				t = std::clamp(t, 0.0f, 1.0f);
+
+				// 衝突時の位置にボールを戻す（すり抜け・埋まりの防止）
+				ball.position = Lerp(previousPosition, ball.position, t);
+
+				// 2. 反射ベクトルの計算
+				Vector3 reflected = Reflect(ball.velocity, plane.normal);
+
+				// 3. 反発係数による減衰を法線方向だけに適用
+				Vector3 projectToNormal = Project(reflected, plane.normal);
+				Vector3 movingDirection = reflected - projectToNormal;
+
+				// 法線方向の速度成分のみ反発係数 e を掛け、接線方向はそのままにする
+				ball.velocity = projectToNormal * restitution + movingDirection;
+			}
 		}
 
 		ImGui::Begin("Window");
 
-		if (ImGui::Button("Start")) {
-			// 振り子の角度状態をリセットしてスタート
-			conicalPendulum.angle = 0.0f;
-			conicalPendulum.angularVelocity = 0.0f;
+		if (ImGui::Button("Reset/Start")) {
+			// 初期位置と初速をリセット
+			ball.position = { 0.8f, 2.5f, 0.3f };
+			ball.velocity = { 0.0f, 0.0f, 0.0f };
 			isStarted = true;
 		}
 
 		ImGui::Separator();
-		// ImGuiでLengthとHalfApexAngleの値を変更できるようにコントロールを追加
-		ImGui::SliderFloat("Length", &conicalPendulum.length, 0.1f, 2.0f);
-		ImGui::SliderFloat("HalfApexAngle", &conicalPendulum.halfApexAngle, 0.0f, std::numbers::pi_v<float> / 2.0f - 0.05f);
+		ImGui::Text("Plane Settings");
+		// スライダーで平面の角度を変更
+		ImGui::SliderAngle("Plane Pitch (X-axis)", &planePitch, -45.0f, 45.0f);
+		ImGui::SliderAngle("Plane Roll  (Z-axis)", &planeRoll, -45.0f, 45.0f);
+		ImGui::SliderFloat("Plane Distance", &plane.distance, -1.0f, 1.0f);
+
+		ImGui::Separator();
+		ImGui::Text("Physics Settings");
+		ImGui::SliderFloat("Restitution (e)", &restitution, 0.0f, 1.0f);
 
 		ImGui::End();
 
@@ -568,16 +558,10 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 		DrawGrid(viewProjectionMatrix, viewportMatrix);
 
-		// アンカーポイントと振り子の先端（ボール）を結ぶ線の描画
-		Vector3 anchorNdc = Transform(conicalPendulum.anchor, viewProjectionMatrix);
-		Vector3 anchorScreen = Transform(anchorNdc, viewportMatrix);
-		Vector3 ballNdc = Transform(ball.position, viewProjectionMatrix);
-		Vector3 ballScreen = Transform(ballNdc, viewportMatrix);
+		// 傾斜平面を描画
+		DrawPlane(plane, viewProjectionMatrix, viewportMatrix, 0xFF8000FF); // 橙色/ピンク
 
-		// 紐を描画（白）
-		Novice::DrawLine(int(anchorScreen.x), int(anchorScreen.y), int(ballScreen.x), int(ballScreen.y), 0xFFFFFFFF);
-
-		// 振り子の先端に球（ボール）をつけて表示
+		// ボール（球体）を描画
 		Sphere ballSphere = { ball.position, ball.radius };
 		DrawSphere(ballSphere, viewProjectionMatrix, viewportMatrix, ball.color);
 
