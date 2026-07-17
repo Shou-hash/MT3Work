@@ -64,12 +64,20 @@ struct Ball {
 	unsigned int color;   // ボールの色
 };
 
+struct ConicalPendulum {
+	Vector3 anchor;            // アンカーポイント。固定された端の位置
+	float length;              // 紐の長さ
+	float halfApexAngle;       // 円錐の頂角の半分
+	float angle;               // 現在の角度
+	float angularVelocity;     // 角速度ω
+};
+
 struct Pendulum {
 	Vector3 anchor;            // アンカーポイント。固定された端の位置
 	float length;              // 紐の長さ
-	float angle;               // 現在の角度[cite: 3]
-	float angularVelocity;     // 角速度ω[cite: 3]
-	float angularAcceleration; // 角加速度[cite: 3]
+	float angle;               // 現在の角度
+	float angularVelocity;     // 角速度ω
+	float angularAcceleration; // 角加速度
 };
 
 // ベクトルの足し算
@@ -453,24 +461,13 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	Vector3 cameraTranslate = { 0.0f, 2.5f, -10.0f };
 	Vector3 cameraRotate = { 0.26f, 0.0f, 0.0f };
 
-	// 実装例の初期値
-	Vector3 transLates[3] = {
-		{ 0.2f, 1.0f, 0.0f },
-		{ 0.4f, 0.0f, 0.0f },
-		{ 0.3f, 1.0f, 0.0f }
-	};
-
-	Vector3 rotates[3] = {
-		{ 0.0f, 0.0f, -6.8f },
-		{ 0.0f, 0.0f, -1.4f },
-		{ 0.0f, 0.0f, 0.0f }
-	};
-
-	Vector3 scales[3] = {
-		{ 1.0f, 1.0f, 1.0f },
-		{ 1.0f, 1.0f, 1.0f },
-		{ 1.0f, 1.0f, 1.0f }
-	};
+	// 円錐振り子の初期化
+	ConicalPendulum conicalPendulum;
+	conicalPendulum.anchor = { 0.0f, 1.0f, 0.0f };    // 固定端の位置
+	conicalPendulum.length = 0.8f;                    // 紐の長さ L
+	conicalPendulum.halfApexAngle = 0.7f;             // 円錐の頂角の半分 θ
+	conicalPendulum.angle = 0.0f;                     // 現在の回転角度
+	conicalPendulum.angularVelocity = 0.0f;           // 角速度
 
 	// 振り子の初期化[cite: 3]
 	Pendulum pendulum;
@@ -513,50 +510,45 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		// deltaTimeの導入
 		float deltaTime = 1.0f / 60.0f;
 
+		// 円錐振り子の位置と物理更新
 		if (isStarted) {
-			// 1. 角加速度を求める: a = -(g / l) * sin(θ)
-			pendulum.angularAcceleration = -(9.8f / pendulum.length) * std::sin(pendulum.angle);
+			// 1. 角速度ωの計算: ω = √(g / (L * cos(θ)))
+			conicalPendulum.angularVelocity = std::sqrt(9.8f / (conicalPendulum.length * std::cos(conicalPendulum.halfApexAngle)));
 
-			// 2. 角速度、角度を更新
-			pendulum.angularVelocity += pendulum.angularAcceleration * deltaTime;
-			pendulum.angle += pendulum.angularVelocity * deltaTime;
+			// 2. 角度の加算: angle += ω * dt
+			conicalPendulum.angle += conicalPendulum.angularVelocity * deltaTime;
 
-			// 3. 角度から位置(座標)への変換（XY平面での振り子運動・下向き）
-			// スライドの通り、X座標にsin、Y座標にcosを適用して下を向かせます[cite: 3]。
-			ball.position.x = pendulum.anchor.x + std::sin(pendulum.angle) * pendulum.length;
-			ball.position.y = pendulum.anchor.y - std::cos(pendulum.angle) * pendulum.length;
-			ball.position.z = pendulum.anchor.z; // Zは固定（左右移動のみ）[cite: 3]
+			// 3. 半径と高さの計算
+			float radius = std::sin(conicalPendulum.halfApexAngle) * conicalPendulum.length;
+			float height = std::cos(conicalPendulum.halfApexAngle) * conicalPendulum.length;
+
+			// 4. ボブ(球体)の3D位置座標を算出
+			ball.position.x = conicalPendulum.anchor.x + std::cos(conicalPendulum.angle) * radius;
+			ball.position.y = conicalPendulum.anchor.y - height;
+			ball.position.z = conicalPendulum.anchor.z - std::sin(conicalPendulum.angle) * radius;
+		}
+		else {
+			// 開始されていない場合でも、ImGuiでのスライダー調整を即座に位置に反映させる
+			float radius = std::sin(conicalPendulum.halfApexAngle) * conicalPendulum.length;
+			float height = std::cos(conicalPendulum.halfApexAngle) * conicalPendulum.length;
+			ball.position.x = conicalPendulum.anchor.x + std::cos(conicalPendulum.angle) * radius;
+			ball.position.y = conicalPendulum.anchor.y - height;
+			ball.position.z = conicalPendulum.anchor.z - std::sin(conicalPendulum.angle) * radius;
 		}
 
 		ImGui::Begin("Window");
 
 		if (ImGui::Button("Start")) {
-			// 振り子の状態を初期化してスタート
-			pendulum.angle = 0.7f; // 初期角度
-			pendulum.angularVelocity = 0.0f;
-			pendulum.angularAcceleration = 0.0f;
-
-			// 初期フレームの位置を即座に計算して反映しておく
-			ball.position.x = pendulum.anchor.x + std::sin(pendulum.angle) * pendulum.length;
-			ball.position.y = pendulum.anchor.y - std::cos(pendulum.angle) * pendulum.length;
-			ball.position.z = pendulum.anchor.z;
-
+			// 振り子の角度状態をリセットしてスタート
+			conicalPendulum.angle = 0.0f;
+			conicalPendulum.angularVelocity = 0.0f;
 			isStarted = true;
 		}
 
 		ImGui::Separator();
-		ImGui::Text("Operator Overload Test");
-		Vector3 testA = { 0.2f, 1.0f, 0.0f };
-		Vector3 testB = { 2.4f, 3.1f, 1.2f };
-		Vector3 testC = testA + testB;
-		Vector3 testD = testA - testB;
-		Vector3 testE = testA * 2.4f;
-
-		Vector3 rotateVals = { 0.4f, 1.43f, -0.8f };
-		Matrix4x4 rotateXMatrix = rotationX(rotateVals.x);
-		Matrix4x4 rotateYMatrix = rotationY(rotateVals.y);
-		Matrix4x4 rotateZMatrix = rotationZ(rotateVals.z);
-		Matrix4x4 rotateMatrix = rotateXMatrix * rotateYMatrix * rotateZMatrix;
+		// ImGuiでLengthとHalfApexAngleの値を変更できるようにコントロールを追加
+		ImGui::SliderFloat("Length", &conicalPendulum.length, 0.1f, 2.0f);
+		ImGui::SliderFloat("HalfApexAngle", &conicalPendulum.halfApexAngle, 0.0f, std::numbers::pi_v<float> / 2.0f - 0.05f);
 
 		ImGui::End();
 
@@ -576,16 +568,16 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 		DrawGrid(viewProjectionMatrix, viewportMatrix);
 
-		// --- 追加：アンカーポイントと振り子の先端（ボール）を結ぶ線の描画 ---
-		Vector3 anchorNdc = Transform(pendulum.anchor, viewProjectionMatrix);
+		// アンカーポイントと振り子の先端（ボール）を結ぶ線の描画
+		Vector3 anchorNdc = Transform(conicalPendulum.anchor, viewProjectionMatrix);
 		Vector3 anchorScreen = Transform(anchorNdc, viewportMatrix);
 		Vector3 ballNdc = Transform(ball.position, viewProjectionMatrix);
 		Vector3 ballScreen = Transform(ballNdc, viewportMatrix);
 
-		// 紐を描画（白などで）
+		// 紐を描画（白）
 		Novice::DrawLine(int(anchorScreen.x), int(anchorScreen.y), int(ballScreen.x), int(ballScreen.y), 0xFFFFFFFF);
 
-		// ばねの先端に球（ボール）をつけて表示
+		// 振り子の先端に球（ボール）をつけて表示
 		Sphere ballSphere = { ball.position, ball.radius };
 		DrawSphere(ballSphere, viewProjectionMatrix, viewportMatrix, ball.color);
 
