@@ -483,40 +483,37 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			ball.velocity += ball.acceleration * deltaTime;
 			ball.position += ball.velocity * deltaTime;
 
-			// スイープ（カプセル）による平面衝突判定と埋まり戻し
-			// ボールの移動軌跡（Segment）を作成
+			// ボールの移動軌跡を線分 (Segment) として定義
 			Segment movementSegment;
 			movementSegment.origin = previousPosition;
 			movementSegment.diff = ball.position - previousPosition;
 
-			// 平面と前後の位置関係（各点から平面への最短距離）を調べる
-			float distPrev = Dot(previousPosition, plane.normal) - plane.distance;
-			float distCurr = Dot(ball.position, plane.normal) - plane.distance;
+			// 線分と平面の法線の内積 (分母: N · Diff)
+			float dotNormalDiff = Dot(plane.normal, movementSegment.diff);
 
-			// 前フレームで平面の上（法線側）にいて、現フレームで平面の下に突き抜けた場合、衝突とみなす
-			if (distPrev >= ball.radius && distCurr < ball.radius) {
+			// 面に向かって進んでいる場合のみ判定 (裏側からのすり抜けや離れていく動きを排除)
+			if (dotNormalDiff < 0.0f) {
+				// 衝突時の球の中心と平面の距離が radius となる時刻 t を求める
+				// 式: ( (origin + t * diff) · normal ) - plane.distance = radius
+				// 展開: t * (diff · normal) = radius + plane.distance - (origin · normal)
+				float num = ball.radius + plane.distance - Dot(movementSegment.origin, plane.normal);
+				float t = num / dotNormalDiff;
 
-				// 1. 衝突が起こった瞬間（ちょうど距離が radius になる瞬間）のパラメータ t を算出する
-				// dist(t) = distPrev + t * (distCurr - distPrev) = radius
-				float t = 0.0f;
-				float denominator = distPrev - distCurr;
-				if (std::abs(denominator) > 0.0001f) {
-					t = (distPrev - ball.radius) / denominator;
+				// t が 0.0f ～ 1.0f の範囲内であれば、このフレーム中に衝突が発生した
+				if (t >= 0.0f && t <= 1.0f) {
+					// 1. 衝突時刻 t の位置にボールを補正（スイープによる正確な着地点）
+					ball.position = movementSegment.origin + t * movementSegment.diff;
+
+					// 2. 反射ベクトルの計算
+					Vector3 reflected = Reflect(ball.velocity, plane.normal);
+
+					// 3. 反発係数による減衰を法線方向だけに適用
+					Vector3 projectToNormal = Project(reflected, plane.normal);
+					Vector3 movingDirection = reflected - projectToNormal;
+
+					// 法線方向の速度成分のみ反発係数 e を掛け、接線方向はそのままにする
+					ball.velocity = projectToNormal * restitution + movingDirection;
 				}
-				t = std::clamp(t, 0.0f, 1.0f);
-
-				// 衝突時の位置にボールを戻す（すり抜け・埋まりの防止）
-				ball.position = Lerp(previousPosition, ball.position, t);
-
-				// 2. 反射ベクトルの計算
-				Vector3 reflected = Reflect(ball.velocity, plane.normal);
-
-				// 3. 反発係数による減衰を法線方向だけに適用
-				Vector3 projectToNormal = Project(reflected, plane.normal);
-				Vector3 movingDirection = reflected - projectToNormal;
-
-				// 法線方向の速度成分のみ反発係数 e を掛け、接線方向はそのままにする
-				ball.velocity = projectToNormal * restitution + movingDirection;
 			}
 		}
 
