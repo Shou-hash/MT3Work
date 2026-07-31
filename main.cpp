@@ -511,6 +511,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 					Vector3 projectToNormal = Project(reflected, plane.normal);
 					Vector3 movingDirection = reflected - projectToNormal;
 
+
 					// 法線方向の速度成分のみ反発係数 e を掛け、接線方向はそのままにする
 					ball.velocity = projectToNormal * restitution + movingDirection;
 				}
